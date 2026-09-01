@@ -24,11 +24,15 @@ dependency at all.
 | `FlushEngine.kt`, `FlushState.kt` | The state machine, as a `StateFlow` |
 | `Platform.kt` | The seams: storage, audio, haptics, clock |
 
+`board/` — the global leaderboard, a Cloudflare Worker over D1, serving both platforms.
+Written and tested, **not deployed yet**; see [board/README.md](board/README.md) for
+the deploy steps and for what its plausibility caps do and don't stop.
+
 ## What's next
 
 - **Tier 2 — the drawing.** An `:app` module: the fixture, the water, the vortex and
   the confetti, redrawn in Compose. Needs the Android SDK, which is why it is not in
-  this build yet.
+  this build yet. This is also where the board gets a client and a Global tab.
 - **Tier 3 — the device.** The synthesised flush against `AudioTrack`, and the rumble
   against `Vibrator`.
 
@@ -103,7 +107,5 @@ Worth knowing before Tier 3:
   approximated by quantising the intensity curve into amplitude steps.
 
 - **The global leaderboard.** `GlobalBoard.swift` is Game Center, which has no drop-in
-  Android equivalent. Note that it does not currently work on iOS either — the Xcode
-  project has no Game Center entitlement — so nothing is being lost by leaving it out
-  for now. The local board (`Standings`) is fully ported and is what the app actually
-  shows.
+  Android equivalent — and does not currently work on iOS either, since the Xcode
+  project has no Game Center entitlement. Replaced rather than ported: see `board/`.

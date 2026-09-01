@@ -1,0 +1,17 @@
+{
+  "name": "toilet-board",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "node --test test/",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260901.1",
+    "@types/node": "^26.4.0",
+    "typescript": "^5.9.0",
+    "wrangler": "^4.128.0"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "toilet-board",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "observability": { "enabled": true },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "toilet-board",
+      // Filled in by `wrangler d1 create toilet-board` — see board/README.md.
+      "database_id": "PUT_THE_DATABASE_ID_HERE"
+    }
+  ]
+}
