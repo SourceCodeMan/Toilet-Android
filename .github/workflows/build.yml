@@ -25,3 +25,25 @@ jobs:
       # covered without an emulator anywhere in sight.
       - name: Test
         run: ./gradlew :core:test
+
+  board:
+    name: Leaderboard
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - run: npm ci
+        working-directory: board
+
+      # The caps are the only thing between the board and anyone with curl, so
+      # they run on every push rather than only when someone remembers.
+      - run: npm test
+        working-directory: board
+
+      - run: npm run typecheck
+        working-directory: board
