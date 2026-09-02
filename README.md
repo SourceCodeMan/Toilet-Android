@@ -86,7 +86,8 @@ assertion can answer that.
 
 The synthesis itself is pure arithmetic and lives in `core`, so it renders on a plain
 JVM with no Android anywhere. `device/AndroidFlushAudio` only turns floats into 16-bit
-PCM and hands them to an `AudioTrack`.
+PCM and feeds them through a streaming `AudioTrack` — one track for the life of the
+app, rather than a static buffer that has to be rewound between plays.
 
 Android Studio ships its own JDK, so nothing needs installing first — and on a machine
 without one, the build fetches a matching toolchain rather than failing. Robolectric
