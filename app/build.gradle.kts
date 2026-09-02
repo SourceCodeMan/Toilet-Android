@@ -49,6 +49,10 @@ dependencies {
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.foundation)
     implementation(libs.compose.ui)
+    implementation(libs.compose.material3)
+    // Twenty-six glyphs the app needs and Compose does not ship by default. The
+    // alternative was hand-drawing every one as a vector path.
+    implementation(libs.compose.material.icons.extended)
     implementation(libs.androidx.activity.compose)
 
     // The drawing is the whole deliverable here and no assertion can judge it, so it

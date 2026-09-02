@@ -3,8 +3,9 @@
 An Android port of [Flush Simulator](https://github.com/SourceCodeMan/Toilet-iOS), which
 is a picture of a toilet you push the handle on.
 
-**Status: Tier 2 of 3, in progress.** The rules are ported and tested, and the toilet
-is drawn. The sound and the buzz are not here yet.
+**Status: Tier 2 of 3.** The game is playable — the rules, the drawing, and a screen
+wired to both. The sound and the buzz are not here yet, and neither is the
+leaderboard screen.
 
 ## What's done
 
@@ -24,11 +25,12 @@ dependency at all.
 | `FlushEngine.kt`, `FlushState.kt` | The state machine, as a `StateFlow` |
 | `Platform.kt` | The seams: storage, audio, haptics, clock |
 
-`app/` — the drawing. The room, the fixture, the water and the confetti, redrawn in
-Compose. It is one `Canvas` rather than a stack of views: the Swift already laid the
-toilet out at absolute positions in a fixed 320x470 space, so nothing needs laying
-out, and drawing directly sidesteps the three things Compose has no cheap answer for
-— continuous corner radii, `.blur`, and coloured offset shadows.
+`app/` — the screen. The room, the fixture, the water and the confetti are drawn
+rather than assembled from views: the Swift already laid the toilet out at absolute
+positions in a fixed 320x470 space, so nothing needs laying out, and one `Canvas`
+sidesteps the three things Compose has no cheap answer for inside a view stack —
+continuous corner radii, `.blur`, and coloured offset shadows. The chrome around it —
+header, fixture bar, upkeep bar, stats card, toast — is ordinary Compose.
 
 `board/` — the global leaderboard, a Cloudflare Worker over D1, serving both platforms.
 Written and tested, **not deployed yet**; see [board/README.md](board/README.md) for
@@ -36,9 +38,8 @@ the deploy steps and for what its plausibility caps do and don't stop.
 
 ## What's next
 
-- **Tier 2 — the rest of the screen.** The stats card, fixture bar, upkeep bar, hold
-  meter, toast and leaderboard, plus the gesture that drives the handle. This is also
-  where the board gets a client and a Global tab.
+- **The leaderboard screen**, and the client that talks to `board/`. The header
+  button is wired to nothing yet.
 - **Tier 3 — the device.** The synthesised flush against `AudioTrack`, and the rumble
   against `Vibrator`.
 
@@ -58,10 +59,16 @@ the whole engine are covered by ordinary unit tests.
 ./gradlew :app:testDebugUnitTest -Proborazzi.test.record=true
 ```
 
-Writes sixteen PNGs to `app/build/screenshots` — every fixture, the four moments of a
-flush, a neglected bowl, the gold — rendered through Robolectric on the JVM. No
-emulator and no device, because the only useful question about a drawing is what it
-looks like, and that needs a picture rather than an assertion.
+Writes twenty PNGs to `app/build/screenshots` — every fixture, the four moments of a
+flush, a neglected bowl, the gold, and the assembled screen in four states — rendered
+through Robolectric on the JVM. No emulator and no device, because the only useful
+question about a drawing is what it looks like, and that needs a picture rather than
+an assertion.
+
+The same run also drives real touches at the handle and checks the engine on the other
+side, which is the part a picture cannot answer: that a 700ms hold grades perfect, a
+tap grades weak, a cancelled gesture is not a flush at all, and the tally only moves
+once the water settles.
 
 Nothing is asserted about *how* it looks. Golden-image comparison is worth turning on
 once the drawing settles; while it is still being tuned it would only cry wolf.

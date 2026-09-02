@@ -5,6 +5,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
+import com.github.takahirom.roborazzi.RobolectricDeviceQualifiers
 import com.github.takahirom.roborazzi.captureRoboImage
 import com.tomchapman.flushsimulator.core.Fixture
 import com.tomchapman.flushsimulator.core.FlushProfile
@@ -13,6 +14,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
@@ -25,6 +27,9 @@ import org.robolectric.annotation.GraphicsMode
  */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
+// The default Robolectric device is a 320x470 phone nobody has owned for a decade,
+// which squeezes the stage down to nothing. This is a real one.
+@Config(qualifiers = RobolectricDeviceQualifiers.Pixel5)
 class ToiletSnapshotTest {
 
     @get:Rule

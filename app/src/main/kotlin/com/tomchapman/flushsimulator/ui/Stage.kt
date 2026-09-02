@@ -1,6 +1,8 @@
 package com.tomchapman.flushsimulator.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.tomchapman.flushsimulator.core.FlushProfile
@@ -8,15 +10,12 @@ import com.tomchapman.flushsimulator.core.Palette
 import com.tomchapman.flushsimulator.core.RoomSurface
 
 /**
- * The room, the fixture and whatever is falling out of the sky, in one Canvas.
+ * The room, the fixture and whatever is falling out of the sky, at a fixed moment.
  *
- * One surface rather than three stacked ones: they share a coordinate space, none of
- * them takes input, and a single pass is what keeps the flush cheap at sixty frames a
- * second.
- *
- * @param elapsed seconds since the flush began, or null when the bowl is at rest.
- * @param restClock wall-clock seconds, so the pool keeps its shimmer at rest.
- * @param celebration seconds since the gold started falling, or null.
+ * The real screen composes these itself, because the background is full-bleed while
+ * the toilet lives in a layout slot. This is the still version: it takes the flush
+ * clock as a number rather than running one, so a screenshot can ask for exactly
+ * 0.55 seconds into a flush.
  */
 @Composable
 fun FlushStage(
@@ -30,16 +29,18 @@ fun FlushStage(
     restClock: Double = 0.0,
     celebration: Double? = null,
 ) {
-    Canvas(modifier) {
-        drawBathroom(palette, surface)
-        drawToilet(
-            elapsed = elapsed,
-            palette = palette,
-            profile = profile,
-            grime = grime,
-            drag = drag,
-            restClock = restClock,
-        )
-        if (celebration != null) drawCelebration(celebration)
+    Box(modifier) {
+        Canvas(Modifier.fillMaxSize()) {
+            drawBathroom(palette, surface)
+            drawToilet(
+                elapsed = elapsed,
+                palette = palette,
+                profile = profile,
+                grime = grime,
+                drag = drag,
+                restClock = restClock,
+            )
+            if (celebration != null) drawCelebration(celebration)
+        }
     }
 }

@@ -33,7 +33,18 @@ object Toilet {
 
     /** Where the handle is, and how big a target it gets. Shared with the gesture. */
     val handlePivot = Offset(118f, 68f)
+
+    /** A generous target over the handle, because nobody wants to aim. */
     val hitArea = Rect(32f, 24f, 148f, 112f)
+}
+
+/**
+ * How the 320x470 design space maps onto whatever it is being drawn into: scaled to
+ * fit, centred. The gesture needs the same answer as the drawing, so both ask here.
+ */
+internal fun toiletTransform(size: Size): Pair<Float, Offset> {
+    val s = min(size.width / Toilet.WIDTH, size.height / Toilet.HEIGHT)
+    return s to Offset((size.width - Toilet.WIDTH * s) / 2, (size.height - Toilet.HEIGHT * s) / 2)
 }
 
 /**
@@ -56,11 +67,9 @@ fun DrawScope.drawToilet(
     // Once the flush owns the handle, the finger stops mattering.
     val push = elapsed?.let { FlushTimeline.handlePush(it) } ?: drag
 
-    val s = min(size.width / Toilet.WIDTH, size.height / Toilet.HEIGHT)
-    val dx = (size.width - Toilet.WIDTH * s) / 2
-    val dy = (size.height - Toilet.HEIGHT * s) / 2
+    val (s, origin) = toiletTransform(size)
 
-    translate(dx, dy) {
+    translate(origin.x, origin.y) {
         scale(s, s, pivot = Offset.Zero) {
             translate(shake.toFloat(), (shake * 0.35).toFloat()) {
                 drawFloorShadow(palette)
@@ -110,11 +119,16 @@ private fun chrome(palette: Palette, bounds: Rect) = Brush.linearGradient(
  */
 private fun DrawScope.drawFloorShadow(palette: Palette) {
     val r = centred(160f, 438f, 238f, 30f)
+    val shadow = palette.porcelainShadow.toColor()
     drawOval(
+        // A plain two-stop gradient spends most of the ellipse already faded, which
+        // read far lighter than the Swift's blurred one. Holding the core dark and
+        // falling away late is what a 10pt blur on a 30pt ellipse actually looks like.
         brush = Brush.radialGradient(
-            colors = listOf(
-                palette.porcelainShadow.toColor().copy(alpha = 0.30f),
-                Color.Transparent,
+            colorStops = arrayOf(
+                0f to shadow.copy(alpha = 0.46f),
+                0.55f to shadow.copy(alpha = 0.34f),
+                1f to Color.Transparent,
             ),
             center = r.center,
             radius = r.width / 2,
