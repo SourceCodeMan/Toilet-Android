@@ -91,6 +91,9 @@ data class Standings(
         return if (index >= 0) index + 1 else null
     }
 
+    /** The best you have ever managed in a day. What the global board ranks you on. */
+    val bestDay: Day? get() = board.firstOrNull()
+
     // Storage
 
     fun save(settings: Settings) {

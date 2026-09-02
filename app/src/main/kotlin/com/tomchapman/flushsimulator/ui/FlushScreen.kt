@@ -28,6 +28,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import com.tomchapman.flushsimulator.board.BoardClient
 import com.tomchapman.flushsimulator.core.Fixture
 import com.tomchapman.flushsimulator.core.FlushEngine
 import com.tomchapman.flushsimulator.core.Palette
@@ -46,14 +49,20 @@ import kotlinx.coroutines.flow.StateFlow
 fun FlushScreen(settings: Settings, modifier: Modifier = Modifier) {
     val scope = rememberCoroutineScope()
     val engine = remember(settings) { FlushEngine(settings = settings, scope = scope) }
-    FlushScreen(engine, modifier)
+    val client = remember(settings) { BoardClient(settings) }
+    FlushScreen(engine, modifier, client)
 }
 
 @Composable
-fun FlushScreen(engine: FlushEngine, modifier: Modifier = Modifier) {
+fun FlushScreen(
+    engine: FlushEngine,
+    modifier: Modifier = Modifier,
+    client: BoardClient? = null,
+) {
     val state by engine.state.collectAsStateCompat()
     val dark = isSystemInDarkTheme()
     var confirmingReset by remember { mutableStateOf(false) }
+    var showingBoard by remember { mutableStateOf(false) }
     var muted by remember { mutableStateOf(false) }
 
     // Gold is an overlay on whatever is installed, not a fixture of its own.
@@ -83,7 +92,7 @@ fun FlushScreen(engine: FlushEngine, modifier: Modifier = Modifier) {
             Header(
                 palette = palette,
                 isMuted = muted,
-                onLeaderboard = { /* the board arrives with its client */ },
+                onLeaderboard = { showingBoard = true },
                 onToggleMute = { muted = !muted },
             )
 
@@ -141,6 +150,22 @@ fun FlushScreen(engine: FlushEngine, modifier: Modifier = Modifier) {
 
         if (state.celebrationStartMillis != null) {
             Celebration(state.celebrationStartMillis!!, Modifier.fillMaxSize())
+        }
+    }
+
+    if (showingBoard) {
+        Dialog(
+            onDismissRequest = { showingBoard = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            LeaderboardSheet(
+                standings = state.standings,
+                lifetime = state.totalFlushes,
+                palette = palette,
+                client = client,
+                nowMillis = System.currentTimeMillis(),
+                onClose = { showingBoard = false },
+            )
         }
     }
 

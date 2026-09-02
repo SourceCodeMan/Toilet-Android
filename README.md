@@ -3,9 +3,8 @@
 An Android port of [Flush Simulator](https://github.com/SourceCodeMan/Toilet-iOS), which
 is a picture of a toilet you push the handle on.
 
-**Status: Tier 2 of 3.** The game is playable — the rules, the drawing, and a screen
-wired to both. The sound and the buzz are not here yet, and neither is the
-leaderboard screen.
+**Status: Tier 2 of 3, done.** The game is playable — the rules, the drawing, the
+screen, and the leaderboard. The sound and the buzz are Tier 3.
 
 ## What's done
 
@@ -38,8 +37,8 @@ the deploy steps and for what its plausibility caps do and don't stop.
 
 ## What's next
 
-- **The leaderboard screen**, and the client that talks to `board/`. The header
-  button is wired to nothing yet.
+- **Deploy `board/`**, then put its URL in `BOARD_URL` (app/…/board/BoardClient.kt).
+  Until then the Global tab says so and your own days keep being recorded.
 - **Tier 3 — the device.** The synthesised flush against `AudioTrack`, and the rumble
   against `Vibrator`.
 
@@ -59,8 +58,9 @@ the whole engine are covered by ordinary unit tests.
 ./gradlew :app:testDebugUnitTest -Proborazzi.test.record=true
 ```
 
-Writes twenty PNGs to `app/build/screenshots` — every fixture, the four moments of a
-flush, a neglected bowl, the gold, and the assembled screen in four states — rendered
+Writes twenty-three PNGs to `app/build/screenshots` — every fixture, the four moments of a
+flush, a neglected bowl, the gold, the assembled screen in four states, and the
+leaderboard in three — rendered
 through Robolectric on the JVM. No emulator and no device, because the only useful
 question about a drawing is what it looks like, and that needs a picture rather than
 an assertion.
