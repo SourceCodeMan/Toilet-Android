@@ -39,12 +39,17 @@ interface Haptics {
 
 /** The synthesised flush. Rendered into an `AudioTrack` on Android. */
 interface FlushAudio {
+    /** Whether the app is silenced. Kept here because it outlives any one screen. */
+    var isMuted: Boolean
+
     fun prepare(voice: FlushProfile) {}
     fun play(golden: Boolean, voice: FlushProfile) {}
     fun stop() {}
 
     /** Does nothing, quietly. */
-    object None : FlushAudio
+    object None : FlushAudio {
+        override var isMuted: Boolean = false
+    }
 }
 
 /** Wall time, injectable so a test can decide what "now" is. */

@@ -55,6 +55,16 @@ class FlushEngine(
 
     // The button
 
+    /**
+     * The finger has gone down on the lever.
+     *
+     * Nothing happens yet but the feel of it. It lives here rather than in the view so
+     * that the engine stays the only thing holding the haptics.
+     */
+    fun handleTouched() {
+        haptics.tick()
+    }
+
     fun pullHandle(pulled: FlushGrade = FlushGrade.Good) {
         val s = _state.value
 

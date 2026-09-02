@@ -32,6 +32,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.tomchapman.flushsimulator.board.BoardClient
 import com.tomchapman.flushsimulator.core.Fixture
+import com.tomchapman.flushsimulator.core.FlushAudio
+import com.tomchapman.flushsimulator.core.Haptics
 import com.tomchapman.flushsimulator.core.FlushEngine
 import com.tomchapman.flushsimulator.core.Palette
 import com.tomchapman.flushsimulator.core.Settings
@@ -46,11 +48,23 @@ import kotlinx.coroutines.flow.StateFlow
  * mid-swirl, which is the right thing to lose.
  */
 @Composable
-fun FlushScreen(settings: Settings, modifier: Modifier = Modifier) {
+fun FlushScreen(
+    settings: Settings,
+    modifier: Modifier = Modifier,
+    audio: FlushAudio = FlushAudio.None,
+    haptics: Haptics = Haptics.None,
+) {
     val scope = rememberCoroutineScope()
-    val engine = remember(settings) { FlushEngine(settings = settings, scope = scope) }
+    val engine = remember(settings, audio, haptics) {
+        FlushEngine(settings = settings, scope = scope, audio = audio, haptics = haptics)
+    }
     val client = remember(settings) { BoardClient(settings) }
-    FlushScreen(engine, modifier, client)
+
+    // Rendering a voice takes a moment, so the installed one is started on before
+    // anybody reaches for the handle.
+    LaunchedEffect(engine) { audio.prepare(engine.state.value.fixture.profile) }
+
+    FlushScreen(engine, modifier, client, audio)
 }
 
 @Composable
@@ -58,12 +72,13 @@ fun FlushScreen(
     engine: FlushEngine,
     modifier: Modifier = Modifier,
     client: BoardClient? = null,
+    audio: FlushAudio = FlushAudio.None,
 ) {
     val state by engine.state.collectAsStateCompat()
     val dark = isSystemInDarkTheme()
     var confirmingReset by remember { mutableStateOf(false) }
     var showingBoard by remember { mutableStateOf(false) }
-    var muted by remember { mutableStateOf(false) }
+    var muted by remember(audio) { mutableStateOf(audio.isMuted) }
 
     // Gold is an overlay on whatever is installed, not a fixture of its own.
     val palette = if (state.showsGold) Palette.golden(dark) else state.fixture.palette(dark)
@@ -93,7 +108,10 @@ fun FlushScreen(
                 palette = palette,
                 isMuted = muted,
                 onLeaderboard = { showingBoard = true },
-                onToggleMute = { muted = !muted },
+                onToggleMute = {
+                    muted = !muted
+                    audio.isMuted = muted
+                },
             )
 
             Toilet(
@@ -102,7 +120,7 @@ fun FlushScreen(
                 grime = state.grime,
                 flushStartMillis = state.flushStartMillis,
                 onPull = engine::pullHandle,
-                onPress = { },
+                onPress = engine::handleTouched,
                 modifier = Modifier.weight(1f).fillMaxWidth(),
             )
 

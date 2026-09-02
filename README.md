@@ -3,8 +3,9 @@
 An Android port of [Flush Simulator](https://github.com/SourceCodeMan/Toilet-iOS), which
 is a picture of a toilet you push the handle on.
 
-**Status: Tier 2 of 3, done.** The game is playable — the rules, the drawing, the
-screen, and the leaderboard. The sound and the buzz are Tier 3.
+**Status: all three tiers ported.** The rules, the drawing, the screen, the
+leaderboard, the synthesised flush and the rumble. Untested on real hardware —
+nobody involved has an Android device yet.
 
 ## What's done
 
@@ -22,6 +23,8 @@ dependency at all.
 | `Rank.kt`, `Quips.kt` | Unearned titles and running commentary |
 | `Standings.kt` | Your best days, and the save format |
 | `FlushEngine.kt`, `FlushState.kt` | The state machine, as a `StateFlow` |
+| `FlushSynth.kt` | The flush noise, synthesised rather than recorded |
+| `HapticPattern.kt` | The rumble, as rungs Android can play |
 | `Platform.kt` | The seams: storage, audio, haptics, clock |
 
 `app/` — the screen. The room, the fixture, the water and the confetti are drawn
@@ -29,7 +32,8 @@ rather than assembled from views: the Swift already laid the toilet out at absol
 positions in a fixed 320x470 space, so nothing needs laying out, and one `Canvas`
 sidesteps the three things Compose has no cheap answer for inside a view stack —
 continuous corner radii, `.blur`, and coloured offset shadows. The chrome around it —
-header, fixture bar, upkeep bar, stats card, toast — is ordinary Compose.
+header, fixture bar, upkeep bar, stats card, toast — is ordinary Compose. `device/`
+is the thin part: samples into an `AudioTrack`, rungs into a `Vibrator`.
 
 `board/` — the global leaderboard, a Cloudflare Worker over D1, serving both platforms.
 Written and tested, **not deployed yet**; see [board/README.md](board/README.md) for
@@ -37,10 +41,10 @@ the deploy steps and for what its plausibility caps do and don't stop.
 
 ## What's next
 
+- **Run it on something.** Every layer is covered by tests that do not need a device,
+  which is not the same as having run on one.
 - **Deploy `board/`**, then put its URL in `BOARD_URL` (app/…/board/BoardClient.kt).
   Until then the Global tab says so and your own days keep being recorded.
-- **Tier 3 — the device.** The synthesised flush against `AudioTrack`, and the rumble
-  against `Vibrator`.
 
 ## Running the tests
 
@@ -73,6 +77,17 @@ once the water settles.
 Nothing is asserted about *how* it looks. Golden-image comparison is worth turning on
 once the drawing settles; while it is still being tuned it would only cry wolf.
 
+## Listening to the flush
+
+`./gradlew :core:test` also writes `core/build/audio/` — every fixture, the golden
+take, and the three ordinary takes of the standard toilet, as wavs. Same bargain as
+the screenshots: the only useful question about a noise is what it sounds like, and no
+assertion can answer that.
+
+The synthesis itself is pure arithmetic and lives in `core`, so it renders on a plain
+JVM with no Android anywhere. `device/AndroidFlushAudio` only turns floats into 16-bit
+PCM and hands them to an `AudioTrack`.
+
 Android Studio ships its own JDK, so nothing needs installing first — and on a machine
 without one, the build fetches a matching toolchain rather than failing. Robolectric
 needs a Java 21 runtime for its SDK 36 sandbox, so the test tasks ask for one
@@ -91,6 +106,11 @@ eye: a script parses the fixture catalogue, the upkeep numbers, the grade window
 the rank table out of the `.swift` files and diffs them against the Kotlin, and a
 second transcription of `FlushTimeline` samples all five fixtures at 100 Hz and
 compares the curves. 15,149 values, no disagreement beyond 4.44e-16.
+
+The synthesiser got the same treatment: a third transcription, of `FlushAudio.swift`
+this time, rendered against the Kotlin sample for sample. 5,066 samples across ten
+voices, nothing off by more than 2.8e-08 — which is float32 rounding and not a
+difference.
 
 ### Where this deliberately differs from the iOS app
 
@@ -129,11 +149,12 @@ a main-confined scope rather than taking locks it does not need.
 
 Worth knowing before Tier 3:
 
-- **Haptic sharpness.** CoreHaptics events carry intensity *and* sharpness, plus
-  parameter curves. Android has amplitude waveforms (API 26+) and composition
-  primitives (API 30+, device-dependent) but no sharpness at all, so the crisp lever
-  tick and the dull thud will be less distinct than on iOS. The swelling rumble can be
-  approximated by quantising the intensity curve into amplitude steps.
+- **Haptic sharpness.** CoreHaptics events carry intensity *and* sharpness, laid over
+  a parameter curve that reshapes them as they run. Android takes amplitudes and how
+  long to hold each, so the curve is sampled into rungs — that part survives — but
+  sharpness has nowhere to go. The crisp tick and the dull thud are told apart by
+  their length instead, which is a poorer distinction than the iOS one. Hardware
+  without `hasAmplitudeControl` loses the swell entirely and gets a rhythm.
 
 - **The global leaderboard.** `GlobalBoard.swift` is Game Center, which has no drop-in
   Android equivalent — and does not currently work on iOS either, since the Xcode

@@ -42,6 +42,7 @@ class RecordingHaptics : Haptics {
 }
 
 class RecordingAudio : FlushAudio {
+    override var isMuted: Boolean = false
     val calls = mutableListOf<String>()
     override fun prepare(voice: FlushProfile) { calls += "prepare(${voice.duration})" }
     override fun play(golden: Boolean, voice: FlushProfile) { calls += "play(golden=$golden)" }
