@@ -7,24 +7,41 @@ on:
   workflow_dispatch:
 
 jobs:
-  core:
-    name: Core rules
+  android:
+    name: Rules and drawing
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
 
+      # 17 is what the app compiles to; Robolectric refuses to stand up an SDK 36
+      # sandbox on anything below 21, so both are here and Gradle picks per task.
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: |
+            17
+            21
+
+      - uses: android-actions/setup-android@v3
 
       - uses: gradle/actions/setup-gradle@v4
 
       # `core` is a plain JVM module on purpose, so the rules of the game are
       # covered without an emulator anywhere in sight.
-      - name: Test
+      - name: Rules
         run: ./gradlew :core:test
+
+      # The drawing renders to PNGs on the JVM. Nothing is asserted about how it
+      # looks — that is a human job — but a render that crashes fails here.
+      - name: Drawing
+        run: ./gradlew :app:testDebugUnitTest -Proborazzi.test.record=true :app:assembleDebug
+
+      - name: Screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: app/build/screenshots
 
   board:
     name: Leaderboard

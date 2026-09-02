@@ -23,6 +23,6 @@ dependencyResolutionManagement {
 rootProject.name = "flush-simulator"
 
 // `core` is the rules: pure Kotlin, no Android, no Compose, so it runs in a plain
-// JVM test. The `app` module — the Compose drawing, the audio and the haptics —
-// arrives with the rest of the port and will need the Android SDK to build.
+// JVM test. `app` is the drawing, which needs the Android SDK.
 include(":core")
+include(":app")

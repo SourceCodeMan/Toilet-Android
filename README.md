@@ -3,8 +3,8 @@
 An Android port of [Flush Simulator](https://github.com/SourceCodeMan/Toilet-iOS), which
 is a picture of a toilet you push the handle on.
 
-**Status: Tier 1 of 3.** The rules of the game are ported and tested. The drawing, the
-sound and the buzz are not here yet.
+**Status: Tier 2 of 3, in progress.** The rules are ported and tested, and the toilet
+is drawn. The sound and the buzz are not here yet.
 
 ## What's done
 
@@ -24,15 +24,21 @@ dependency at all.
 | `FlushEngine.kt`, `FlushState.kt` | The state machine, as a `StateFlow` |
 | `Platform.kt` | The seams: storage, audio, haptics, clock |
 
+`app/` — the drawing. The room, the fixture, the water and the confetti, redrawn in
+Compose. It is one `Canvas` rather than a stack of views: the Swift already laid the
+toilet out at absolute positions in a fixed 320x470 space, so nothing needs laying
+out, and drawing directly sidesteps the three things Compose has no cheap answer for
+— continuous corner radii, `.blur`, and coloured offset shadows.
+
 `board/` — the global leaderboard, a Cloudflare Worker over D1, serving both platforms.
 Written and tested, **not deployed yet**; see [board/README.md](board/README.md) for
 the deploy steps and for what its plausibility caps do and don't stop.
 
 ## What's next
 
-- **Tier 2 — the drawing.** An `:app` module: the fixture, the water, the vortex and
-  the confetti, redrawn in Compose. Needs the Android SDK, which is why it is not in
-  this build yet. This is also where the board gets a client and a Global tab.
+- **Tier 2 — the rest of the screen.** The stats card, fixture bar, upkeep bar, hold
+  meter, toast and leaderboard, plus the gesture that drives the handle. This is also
+  where the board gets a client and a Global tab.
 - **Tier 3 — the device.** The synthesised flush against `AudioTrack`, and the rumble
   against `Vibrator`.
 
@@ -42,12 +48,28 @@ the deploy steps and for what its plausibility caps do and don't stop.
 ./gradlew :core:test
 ```
 
-94 tests, no emulator, about a second. That is the entire point of `core` being a
+88 tests, no emulator, about a second. That is the entire point of `core` being a
 plain JVM module: the flush maths, the grading, the upkeep loop, the save format and
 the whole engine are covered by ordinary unit tests.
 
+## Looking at the drawing
+
+```sh
+./gradlew :app:testDebugUnitTest -Proborazzi.test.record=true
+```
+
+Writes sixteen PNGs to `app/build/screenshots` — every fixture, the four moments of a
+flush, a neglected bowl, the gold — rendered through Robolectric on the JVM. No
+emulator and no device, because the only useful question about a drawing is what it
+looks like, and that needs a picture rather than an assertion.
+
+Nothing is asserted about *how* it looks. Golden-image comparison is worth turning on
+once the drawing settles; while it is still being tuned it would only cry wolf.
+
 Android Studio ships its own JDK, so nothing needs installing first — and on a machine
-without one, the build fetches a matching toolchain rather than failing.
+without one, the build fetches a matching toolchain rather than failing. Robolectric
+needs a Java 21 runtime for its SDK 36 sandbox, so the test tasks ask for one
+specifically while the app itself still compiles to 17.
 
 ## How the port was done
 
