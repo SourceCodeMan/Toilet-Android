@@ -114,12 +114,24 @@ def draw_fixture():
     # Glint on the water.
     draw.ellipse(box(440, 588, 110, 34), fill=(255, 255, 255))
 
-    # Handle.
-    draw.ellipse(box(276, 300, 78, 78), fill=CHROME_MID)
-    draw.rounded_rectangle([px(140), px(286), px(296), px(324)], radius=px(19), fill=CHROME_LIGHT)
-    draw.rounded_rectangle([px(140), px(306), px(296), px(324)], radius=px(9), fill=CHROME_MID)
-    draw.ellipse(box(276, 300, 74, 74), fill=CHROME_LIGHT)
-    draw.ellipse(box(276, 300, 26, 26), fill=CHROME_DARK)
+    # Handle, on the tank face rather than hanging off its edge.
+    #
+    # The cistern spans x 297..727. The lever used to run 140..296, which put the
+    # whole thing outside the tank in mid-air. The app mounts it inboard: a 58x15
+    # capsule from the cistern's left edge to a pivot 58 units in, tilted 10 degrees
+    # so the free end hangs low. In icon units that is 297..422 at y 270.
+    lever = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+    lever_draw = ImageDraw.Draw(lever)
+    lever_draw.rounded_rectangle([px(297), px(253), px(424), px(287)], radius=px(17), fill=CHROME_LIGHT)
+    lever_draw.rounded_rectangle([px(297), px(275), px(424), px(287)], radius=px(6), fill=CHROME_MID)
+    # Negative because Pillow rotates counter-clockwise and the app tilts the other way.
+    lever = lever.rotate(-10, resample=Image.BICUBIC, center=(px(422), px(270)))
+    image = Image.alpha_composite(image, lever)
+    draw = ImageDraw.Draw(image)
+
+    draw.ellipse(box(422, 270, 60, 60), fill=CHROME_MID)
+    draw.ellipse(box(422, 270, 52, 52), fill=CHROME_LIGHT)
+    draw.ellipse(box(422, 270, 14, 14), fill=CHROME_DARK)
 
     return image.resize((DESIGN, DESIGN), Image.LANCZOS).crop(image.resize((DESIGN, DESIGN), Image.LANCZOS).getbbox())
 
