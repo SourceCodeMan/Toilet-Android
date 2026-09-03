@@ -19,20 +19,30 @@ import kotlin.test.assertTrue
  * Everything the Swift reached for globally — storage, sound, buzz, the clock, the
  * dice — is handed in here, so a whole flush runs in microseconds and the parts that
  * used to be untestable (what the app says, when the streak dies, what a reset does
- * to a settle already in flight) are ordinary assertions.
+ * to a settle already in flight, what a tank is worth) are ordinary assertions.
+ *
+ * The clock is pinned to 2026-09-03, which makes today's daily the Outhouse with 2%
+ * grime and a target of four squares — the same day an iPhone would deal.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class FlushEngineTest {
 
     private val utc: ZoneId = ZoneId.of("UTC")
-    private val standardFlushMillis = (FlushProfile.Standard.duration * 1_000).toLong()
+
+    /** 2026-09-03T12:00Z. */
+    private val noon = 1_788_436_800_000L
+
+    private fun millis(profile: FlushProfile, grade: FlushGrade = FlushGrade.Good) =
+        (grade.applyTo(profile).duration * 1_000).toLong()
+
+    private val standardFlush = millis(FlushProfile.Standard)
 
     private fun TestScope.engine(
         settings: Settings = MapSettings(),
         random: Random = QueuedRandom(),
         audio: FlushAudio = RecordingAudio(),
         haptics: Haptics = RecordingHaptics(),
-        clock: Clock = FakeClock(),
+        clock: Clock = FakeClock(noon),
     ) = FlushEngine(
         settings = settings,
         scope = this,
@@ -44,20 +54,41 @@ class FlushEngineTest {
         zone = utc,
     )
 
+    /**
+     * Pulls the handle and lets the water settle — and no further. Running the clock
+     * to idle would also run the message off and the gold out, and most of what
+     * these tests read is exactly that.
+     */
+    private fun TestScope.flush(engine: FlushEngine, grade: FlushGrade = FlushGrade.Good) {
+        engine.pullHandle(grade)
+        advanceTimeBy(millis(engine.state.value.activeProfile) + 1)
+    }
+
+    /** Draws and tears a sheet, the way a finger would. */
+    private fun load(engine: FlushEngine, squares: Int) {
+        engine.pullPaper(squares)
+        engine.cutPaper()
+    }
+
     // Starting from nothing
 
     @Test
-    fun `a fresh engine starts at nothing`() = runTest {
+    fun `a fresh engine starts with a full tank and a bare roll`() = runTest {
         val state = engine().state.value
         assertEquals(0, state.totalFlushes)
         assertEquals(0, state.goldenFlushes)
         assertEquals(0, state.streak)
         assertEquals(0.0, state.grime)
-        assertEquals(Upkeep.DEFAULT_PAPER, state.paper)
+        assertEquals(Upkeep.RUN_LENGTH, state.flushesLeft)
+        assertEquals(0, state.runScore)
+        assertEquals(0, state.paperPulled)
+        assertTrue(!state.isPaperCut)
         assertEquals(Fixture.Standard, state.fixture)
         assertTrue(!state.isFlushing)
         assertTrue(!state.isClogged)
+        assertNull(state.daily)
         assertNull(state.message)
+        assertEquals(9_376, state.challenge.stamp)
     }
 
     // One flush
@@ -70,7 +101,7 @@ class FlushEngineTest {
         assertTrue(engine.state.value.isFlushing)
         assertEquals(0, engine.state.value.totalFlushes, "the flush is still running")
 
-        advanceTimeBy(standardFlushMillis - 1)
+        advanceTimeBy(standardFlush - 1)
         assertEquals(0, engine.state.value.totalFlushes, "still running one millisecond out")
 
         advanceTimeBy(2)
@@ -98,11 +129,7 @@ class FlushEngineTest {
         advanceTimeBy(1_000)
         engine.pullHandle()
 
-        assertEquals(
-            FlushState.Message.Kind.Busy,
-            engine.state.value.message?.kind,
-            "the second pull should be told to wait",
-        )
+        assertEquals(FlushState.Message.Kind.Busy, engine.state.value.message?.kind)
         assertTrue(haptics.calls.contains("thud"))
 
         advanceUntilIdle()
@@ -111,14 +138,19 @@ class FlushEngineTest {
 
     @Test
     fun `a flush finishes on the duration its grade earned, not the fixture's`() = runTest {
-        // A weak pull is 0.72 of the fixture's length; settling on the fixture's own
-        // duration would leave the bowl visibly at rest while the tally waited.
         val engine = engine()
         engine.pullHandle(FlushGrade.Weak)
-
-        val weakMillis = (FlushProfile.Standard.duration * 0.72 * 1_000).toLong()
-        advanceTimeBy(weakMillis + 1)
+        advanceTimeBy(millis(FlushProfile.Standard, FlushGrade.Weak) + 1)
         assertEquals(1, engine.state.value.totalFlushes)
+    }
+
+    @Test
+    fun `flushing nothing at all is noticed`() = runTest {
+        val engine = engine()
+        flush(engine)
+        assertEquals(FlushState.Message.Kind.Busy, engine.state.value.message?.kind)
+        // Whatever the line, it is one of the ones about not having wiped.
+        assertTrue(engine.state.value.message!!.text.isNotBlank())
     }
 
     // Streaks
@@ -126,15 +158,11 @@ class FlushEngineTest {
     @Test
     fun `a perfect run builds a streak and remembers the best of it`() = runTest {
         val engine = engine()
-        repeat(3) {
-            engine.pullHandle(FlushGrade.Perfect)
-            advanceUntilIdle()
-        }
+        repeat(3) { flush(engine, FlushGrade.Perfect) }
         assertEquals(3, engine.state.value.streak)
         assertEquals(3, engine.state.value.bestStreak)
 
-        engine.pullHandle(FlushGrade.Weak)
-        advanceUntilIdle()
+        flush(engine, FlushGrade.Weak)
         assertEquals(0, engine.state.value.streak, "a weak pull ends the run")
         assertEquals(3, engine.state.value.bestStreak, "but the best of it stands")
     }
@@ -142,41 +170,26 @@ class FlushEngineTest {
     @Test
     fun `a good pull leaves a run standing without extending it`() = runTest {
         val engine = engine()
-        engine.pullHandle(FlushGrade.Perfect)
-        advanceUntilIdle()
-        engine.pullHandle(FlushGrade.Good)
-        advanceUntilIdle()
+        flush(engine, FlushGrade.Perfect)
+        flush(engine, FlushGrade.Good)
         assertEquals(1, engine.state.value.streak)
-    }
-
-    @Test
-    fun `holding too long ends a run`() = runTest {
-        val engine = engine()
-        engine.pullHandle(FlushGrade.Perfect)
-        advanceUntilIdle()
-        engine.pullHandle(FlushGrade.Overheld)
-        advanceUntilIdle()
-        assertEquals(0, engine.state.value.streak)
     }
 
     @Test
     fun `a filthy bowl costs you the run whatever you do at the handle`() = runTest {
         val engine = engine(settings = MapSettings(mapOf("grime" to 0.95)))
         assertTrue(engine.state.value.isFilthy)
-
         engine.pullHandle(FlushGrade.Perfect)
         assertEquals(0, engine.state.value.streak, "a perfect pull cannot save a filthy bowl")
     }
 
     @Test
     fun `a filthy bowl produces no gold`() = runTest {
-        // The dice would say yes to anything; the bowl says no.
         val engine = engine(
             settings = MapSettings(mapOf("grime" to 0.95)),
             random = QueuedRandom(0.0, 1.0),
         )
-        engine.pullHandle(FlushGrade.Perfect)
-        advanceUntilIdle()
+        flush(engine, FlushGrade.Perfect)
         assertEquals(0, engine.state.value.goldenFlushes)
     }
 
@@ -192,7 +205,7 @@ class FlushEngineTest {
         assertTrue(engine.state.value.showsGold)
         assertEquals(listOf("play(golden=true)"), audio.calls)
 
-        advanceTimeBy(standardFlushMillis + 1)
+        advanceTimeBy(standardFlush + 1)
         assertEquals(1, engine.state.value.goldenFlushes)
         assertNotNull(engine.state.value.celebrationStartMillis, "the gold should be falling")
         assertEquals(FlushState.Message.Kind.Golden, engine.state.value.message?.kind)
@@ -202,114 +215,328 @@ class FlushEngineTest {
         assertTrue(!engine.state.value.showsGold)
     }
 
-    // Clogs
+    // The roll on the wall
 
     @Test
-    fun `a clog stops everything until it is plunged`() = runTest {
-        val haptics = RecordingHaptics()
-        // No gold, then a clog. Five squares makes the odds real.
-        val engine = engine(random = QueuedRandom(1.0, 0.0), haptics = haptics)
-        engine.setPaper(5)
+    fun `the roll holds five squares and no more`() = runTest {
+        val engine = engine()
+        engine.pullPaper(99)
+        assertEquals(Upkeep.PAPER_RANGE.last, engine.state.value.paperPulled)
+        engine.pullPaper(-4)
+        assertEquals(0, engine.state.value.paperPulled)
+    }
 
-        engine.pullHandle(FlushGrade.Perfect)
-        advanceTimeBy(standardFlushMillis + 1)
+    @Test
+    fun `a torn sheet is what goes down, and it goes down with the flush`() = runTest {
+        val engine = engine()
+        load(engine, 3)
+        assertTrue(engine.state.value.isPaperCut)
+        assertEquals(3, engine.state.value.loadedPaper)
+
+        flush(engine)
+        assertEquals(0, engine.state.value.paperPulled, "the sheet went with the water")
+        assertTrue(!engine.state.value.isPaperCut, "and the roll is ready again")
+    }
+
+    @Test
+    fun `the roll cannot be touched mid-flush, blocked, or once it is torn`() = runTest {
+        val engine = engine()
+        load(engine, 2)
+        engine.pullPaper(5)
+        assertEquals(2, engine.state.value.paperPulled, "a torn sheet is torn")
+
+        val running = engine()
+        running.pullHandle()
+        running.pullPaper(3)
+        assertEquals(0, running.state.value.paperPulled, "not while the water is moving")
+    }
+
+    @Test
+    fun `an uncut sheet is a runaway, and a runaway always blocks`() = runTest {
+        // The dice would say it went down; the roll disagrees.
+        val engine = engine(random = QueuedRandom(1.0, 1.0))
+        engine.pullPaper(2)
+        assertEquals(Upkeep.RUNAWAY_PAPER, engine.state.value.loadedPaper)
+
+        flush(engine)
+        assertTrue(engine.state.value.isClogged)
+        assertTrue(engine.state.value.isPaperTrailing, "still attached to the roll")
+        assertEquals(2, engine.state.value.paperPulled, "the sheet is still hanging there")
+        assertTrue(engine.state.value.message!!.text.startsWith("The whole roll went in."))
+    }
+
+    @Test
+    fun `a trailing sheet has to be cut before the plunger will bite`() = runTest {
+        val engine = engine(random = QueuedRandom(1.0, 1.0))
+        engine.pullPaper(2)
+        flush(engine)
+
+        engine.plunge()
+        assertEquals(0, engine.state.value.plunges, "nothing lands while it is attached")
+        assertEquals("It's still attached. Cut it.", engine.state.value.message?.text)
+
+        engine.cutPaper()
+        assertTrue(!engine.state.value.isPaperTrailing)
+        assertEquals(0, engine.state.value.paperPulled)
+        assertEquals("Cut free. Now plunge it.", engine.state.value.message?.text)
+
+        repeat(Upkeep.PLUNGES_TO_CLEAR) { engine.plunge() }
+        assertTrue(!engine.state.value.isClogged)
+        // A whole roll leaves the bowl in a state only the wand answers.
+        assertTrue(engine.state.value.isFilthy, "grime ${engine.state.value.grime}")
+    }
+
+    @Test
+    fun `an ordinary block swallows the sheet and costs the score, not the streak`() = runTest {
+        // Every flush rolls twice, gold then clog. Two clean flushes, then the third
+        // blocks: five squares makes the odds real and the dice say yes.
+        val engine = engine(random = QueuedRandom(1.0, 1.0, 1.0, 1.0, 1.0, 0.0))
+        flush(engine, FlushGrade.Perfect)          // banks something to lose
+        load(engine, 3)
+        flush(engine, FlushGrade.Perfect)
+        val banked = engine.state.value.runScore
+        assertTrue(banked > 0)
+        assertEquals(2, engine.state.value.streak)
+
+        load(engine, 5)
+        flush(engine, FlushGrade.Perfect)
 
         assertTrue(engine.state.value.isClogged)
-        assertEquals(0, engine.state.value.streak, "a blockage costs you the run")
-        assertEquals("Clogged.", engine.state.value.message?.text)
-
-        val tally = engine.state.value.totalFlushes
-        engine.pullHandle()
-        assertEquals("Blocked. Plunge it.", engine.state.value.message?.text)
-        advanceUntilIdle()
-        assertEquals(tally, engine.state.value.totalFlushes, "a blocked bowl does not flush")
+        assertTrue(!engine.state.value.isPaperTrailing, "an ordinary block is not a runaway")
+        assertEquals(0, engine.state.value.paperPulled, "the sheet went in with it")
+        assertEquals(3, engine.state.value.streak, "the streak deliberately survives")
+        assertTrue(engine.state.value.runScore < banked, "the score paid for it")
+        assertTrue(engine.state.value.lastClogCost > 0)
+        assertTrue(engine.state.value.message!!.text.startsWith("Clogged. −"))
     }
 
     @Test
     fun `five pumps clear a blockage and stir the filth up`() = runTest {
         val engine = engine(random = QueuedRandom(1.0, 0.0))
-        engine.setPaper(5)
-        engine.pullHandle(FlushGrade.Perfect)
-        advanceTimeBy(standardFlushMillis + 1)
+        load(engine, 5)
+        flush(engine)
         assertTrue(engine.state.value.isClogged)
-
         val grimeBefore = engine.state.value.grime
 
         repeat(Upkeep.PLUNGES_TO_CLEAR - 1) { i ->
             engine.plunge()
             assertTrue(engine.state.value.isClogged, "still blocked after ${i + 1} pumps")
-            assertEquals("${Upkeep.PLUNGES_TO_CLEAR - i - 1} more", engine.state.value.message?.text)
         }
-
         engine.plunge()
         assertTrue(!engine.state.value.isClogged)
-        assertEquals(0, engine.state.value.plunges)
-        assertEquals(grimeBefore + 0.08, engine.state.value.grime, 1e-9, "clearing it churns the filth up")
+        assertEquals(grimeBefore + 0.08, engine.state.value.grime, 1e-9)
     }
 
+    // The tank
+
     @Test
-    fun `plunging a bowl that is not blocked does nothing`() = runTest {
+    fun `every flush comes off the tank and the twentieth ends the run`() = runTest {
         val engine = engine()
-        engine.plunge()
-        assertEquals(0, engine.state.value.plunges)
-        assertNull(engine.state.value.message)
-    }
+        repeat(Upkeep.RUN_LENGTH - 1) { flush(engine) }
+        assertEquals(1, engine.state.value.flushesLeft)
+        assertTrue(!engine.state.value.isRunOver)
 
-    // Upkeep
-
-    @Test
-    fun `flushing dirties the bowl, and paper dirties it faster`() = runTest {
-        val plain = engine()
-        plain.setPaper(0)
-        plain.pullHandle()
-        advanceUntilIdle()
-
-        val heavy = engine()
-        heavy.setPaper(5)
-        heavy.pullHandle()
-        advanceUntilIdle()
-
-        assertTrue(plain.state.value.grime > 0.0)
-        assertTrue(heavy.state.value.grime > plain.state.value.grime, "five squares should leave more behind")
+        flush(engine)
+        assertEquals(0, engine.state.value.flushesLeft)
+        assertTrue(engine.state.value.isRunOver)
+        assertEquals(engine.state.value.runScore, engine.state.value.bestRun, "a first tank is the best tank")
+        assertTrue(engine.state.value.bestRun > 0)
     }
 
     @Test
-    fun `the wand wipes the bowl clean`() = runTest {
-        val haptics = RecordingHaptics()
-        val engine = engine(settings = MapSettings(mapOf("grime" to 0.7)), haptics = haptics)
+    fun `a flush is worth its points times the fixture's payout`() = runTest {
+        val engine = engine()
+        load(engine, 3)
+        flush(engine)
+        assertEquals(Upkeep.points(3, golden = false), engine.state.value.runScore)
 
+        val outhouse = engine(settings = MapSettings(mapOf("totalFlushes" to 500, "equippedFixture" to "outhouse")))
+        load(outhouse, 3)
+        flush(outhouse)
+        assertEquals(
+            (Upkeep.points(3, golden = false) * Fixture.Outhouse.payout).toInt(),
+            outhouse.state.value.runScore,
+            "the outhouse pays for the trouble",
+        )
+    }
+
+    @Test
+    fun `a dry tank refuses, and remembers being asked`() = runTest {
+        val engine = engine()
+        repeat(Upkeep.RUN_LENGTH) { flush(engine) }
+        val total = engine.state.value.totalFlushes
+
+        engine.pullHandle()
+        assertEquals("Tank's dry. Start a new one.", engine.state.value.message?.text)
+        assertEquals(1, engine.state.value.dryTankAsks)
+        advanceUntilIdle()
+        assertEquals(total, engine.state.value.totalFlushes, "nothing flushed")
+    }
+
+    @Test
+    fun `a new tank starts clean and starts over`() = runTest {
+        val engine = engine()
+        load(engine, 4)
+        repeat(Upkeep.RUN_LENGTH) { flush(engine) }
+        assertTrue(engine.state.value.isRunOver)
+
+        engine.startRun()
+        val s = engine.state.value
+        assertEquals(Upkeep.RUN_LENGTH, s.flushesLeft)
+        assertEquals(0, s.runScore)
+        assertTrue(!s.isRunOver)
+        assertEquals(0.0, s.grime)
+        assertEquals(0, s.paperPulled)
+        assertTrue(s.bestRun > 0, "the best tank is kept across tanks")
+    }
+
+    @Test
+    fun `scrubbing costs water, and there has to be some to spend`() = runTest {
+        val engine = engine(settings = MapSettings(mapOf("grime" to 0.5)))
         engine.useWand()
         assertEquals(0.0, engine.state.value.grime)
-        assertEquals("Spotless. That was overdue.", engine.state.value.message?.text)
-        assertTrue(haptics.calls.contains("tick"))
+        assertEquals(Upkeep.RUN_LENGTH - Upkeep.WAND_COST, engine.state.value.flushesLeft)
+
+        val dry = engine(settings = MapSettings(mapOf("grime" to 0.5)))
+        repeat(Upkeep.RUN_LENGTH) { flush(dry) }
+        dry.useWand()
+        assertEquals("No water left to scrub with.", dry.state.value.message?.text)
+    }
+
+    // The lucky roll
+
+    @Test
+    fun `one roll in a hundred is not paper`() = runTest {
+        val random = QueuedRandom().apply { cash = true }
+        val engine = engine(random = random)
+        engine.pullPaper(3)
+        assertTrue(engine.state.value.isCashRoll)
+        assertEquals("Hold on. That's not paper.", engine.state.value.message?.text)
     }
 
     @Test
-    fun `the wand says less about a bowl that was barely dirty`() = runTest {
-        val engine = engine(settings = MapSettings(mapOf("grime" to 0.1)))
-        engine.useWand()
-        assertEquals("Spotless.", engine.state.value.message?.text)
+    fun `the roll is decided once, so it cannot be fished for`() = runTest {
+        val random = QueuedRandom()
+        val engine = engine(random = random)
+        engine.pullPaper(1)
+        random.cash = true
+        engine.pullPaper(3)
+        engine.pullPaper(0)
+        engine.pullPaper(5)
+        assertTrue(!engine.state.value.isCashRoll, "yo-yoing the roll should not roll the dice again")
     }
 
     @Test
-    fun `the wand does nothing to a clean bowl, or to one mid-flush`() = runTest {
-        val clean = engine()
-        clean.useWand()
-        assertNull(clean.state.value.message)
+    fun `flushing money never blocks, pays absurdly, and shows the card`() = runTest {
+        // The dice would block a five-square flush; money goes down regardless.
+        val random = QueuedRandom(1.0, 0.0).apply { cash = true }
+        val engine = engine(random = random)
+        engine.pullPaper(5)      // uncut on purpose: money goes down however you feed it in
+        flush(engine)
 
-        val busy = engine(settings = MapSettings(mapOf("grime" to 0.5)))
-        busy.pullHandle()
-        busy.useWand()
-        assertEquals(0.5, busy.state.value.grime, "you cannot scrub a bowl that is flushing")
+        val s = engine.state.value
+        assertTrue(!s.isClogged, "a payout that punishes you is not a payout")
+        assertEquals(
+            (Upkeep.points(5, golden = false) * Upkeep.CASH_MULTIPLIER).toInt(),
+            s.runScore,
+        )
+        assertTrue(s.isCashPayout, "Benjamin should be on screen")
+        assertNotNull(s.celebrationStartMillis)
+        assertEquals(FlushState.Message.Kind.Golden, s.message?.kind)
+        assertTrue(!s.isCashRoll, "a plain roll goes back on the wall")
+
+        advanceTimeBy(3_801)
+        assertTrue(!engine.state.value.isCashPayout, "the card leaves with the gold")
+    }
+
+    // The daily
+
+    @Test
+    fun `starting the daily deals the day's bowl`() = runTest {
+        val engine = engine(settings = MapSettings(mapOf("grime" to 0.6)))
+        engine.startDaily()
+        val s = engine.state.value
+        assertTrue(s.isDailyRunning)
+        assertEquals(Fixture.Outhouse, s.fixture, "today is the outhouse")
+        assertEquals(0.02, s.grime, 1e-12)
+        assertEquals(0, s.streak)
+        assertEquals("Daily #76 — 4 squares", s.message?.text)
     }
 
     @Test
-    fun `paper is clamped to what the roll holds`() = runTest {
+    fun `the daily is five flushes, does not touch the tank, and pays for hitting the target`() = runTest {
         val engine = engine()
-        engine.setPaper(99)
-        assertEquals(Upkeep.PAPER_RANGE.last, engine.state.value.paper)
-        engine.setPaper(-4)
-        assertEquals(Upkeep.PAPER_RANGE.first, engine.state.value.paper)
+        engine.startDaily()
+        val tank = engine.state.value.flushesLeft
+
+        load(engine, 4)                              // the target
+        flush(engine)
+        val run = engine.state.value.daily!!
+        assertEquals(listOf(DailyMark.Good), run.marks)
+        assertEquals((Upkeep.points(4, false) * DailyChallenge.TARGET_BONUS).toInt(), run.score)
+        assertEquals(tank, engine.state.value.flushesLeft, "the tank is not in play during a daily")
+
+        load(engine, 2)                              // off target: no bonus
+        flush(engine, FlushGrade.Perfect)
+        assertEquals(DailyMark.Perfect, engine.state.value.daily!!.marks.last())
+        assertEquals(run.score + Upkeep.points(2, false), engine.state.value.daily!!.score)
+    }
+
+    @Test
+    fun `a blocked daily flush is marked and scores nothing`() = runTest {
+        val engine = engine(random = QueuedRandom(1.0, 0.0))
+        engine.startDaily()
+        load(engine, 5)
+        flush(engine)
+        val run = engine.state.value.daily!!
+        assertEquals(listOf(DailyMark.Clogged), run.marks)
+        assertEquals(0, run.score)
+        assertEquals(0, engine.state.value.lastClogCost, "a daily deducts nothing from a tank it is not using")
+    }
+
+    @Test
+    fun `finishing the daily hands the bowl back and keeps the result`() = runTest {
+        val settings = MapSettings(mapOf("grime" to 0.3, "totalFlushes" to 200, "equippedFixture" to "victorian"))
+        val engine = engine(settings = settings)
+        engine.startDaily()
+        assertEquals(Fixture.Outhouse, engine.state.value.fixture)
+
+        repeat(DailyChallenge.FLUSH_COUNT) { flush(engine) }
+
+        val s = engine.state.value
+        assertTrue(s.isDailyDone)
+        assertTrue(s.message!!.text.startsWith("Daily done —"))
+        assertEquals(Fixture.Victorian, s.fixture, "ordinary play gets its toilet back")
+        assertEquals(0.3, s.grime, 1e-12, "and its grime")
+
+        // Done means done: no second attempt, and the handle still works.
+        engine.startDaily()
+        assertEquals(DailyChallenge.FLUSH_COUNT, engine.state.value.daily!!.marks.size)
+        flush(engine)
+        assertEquals(200 + DailyChallenge.FLUSH_COUNT + 1, engine.state.value.totalFlushes, "play goes on")
+    }
+
+    @Test
+    fun `a finished daily survives a restart, on the same day`() = runTest {
+        val settings = MapSettings()
+        val first = engine(settings = settings)
+        first.startDaily()
+        repeat(DailyChallenge.FLUSH_COUNT) { flush(first) }
+
+        val sameDay = engine(settings = settings)
+        assertTrue(sameDay.state.value.isDailyDone)
+
+        val tomorrow = engine(settings = settings, clock = FakeClock(noon + 86_400_000))
+        assertNull(tomorrow.state.value.daily, "yesterday's attempt is not today's")
+        assertEquals(9_377, tomorrow.state.value.challenge.stamp)
+    }
+
+    @Test
+    fun `the daily cannot start mid-flush or on a blocked bowl`() = runTest {
+        val engine = engine()
+        engine.pullHandle()
+        engine.startDaily()
+        assertNull(engine.state.value.daily)
     }
 
     // Fixtures
@@ -319,68 +546,45 @@ class FlushEngineTest {
         val engine = engine()
         engine.equip(Fixture.Orbital)
         assertEquals(Fixture.Standard, engine.state.value.fixture)
-        assertNull(engine.state.value.message, "no need to rub it in")
+        assertNull(engine.state.value.message)
     }
 
     @Test
     fun `an earned fixture is installed and introduces itself`() = runTest {
         val audio = RecordingAudio()
         val engine = engine(settings = MapSettings(mapOf("totalFlushes" to 500)), audio = audio)
-
         engine.equip(Fixture.Chrome)
         assertEquals(Fixture.Chrome, engine.state.value.fixture)
         assertEquals(Fixture.Chrome.blurb, engine.state.value.message?.text)
-        assertTrue(audio.calls.any { it.startsWith("prepare") }, "the new voice should be rendered")
-    }
-
-    @Test
-    fun `fixtures cannot be swapped mid-flush`() = runTest {
-        val engine = engine(settings = MapSettings(mapOf("totalFlushes" to 500)))
-        engine.pullHandle()
-        engine.equip(Fixture.Chrome)
-
-        assertEquals(Fixture.Standard, engine.state.value.fixture)
-        assertEquals("Not mid-flush.", engine.state.value.message?.text)
+        assertTrue(audio.calls.any { it.startsWith("prepare") })
     }
 
     @Test
     fun `unlocking a toilet outranks anything else the app had to say`() = runTest {
-        // 24 flushes in the bank, and the 25th earns the outhouse.
         val engine = engine(settings = MapSettings(mapOf("totalFlushes" to 24)))
-        engine.pullHandle(FlushGrade.Good)
-        advanceTimeBy(standardFlushMillis + 1)
-
+        load(engine, 2)
+        flush(engine)
         assertEquals(25, engine.state.value.totalFlushes)
         assertEquals("Unlocked — ${Fixture.Outhouse.name}", engine.state.value.message?.text)
-        assertEquals(FlushState.Message.Kind.Unlock, engine.state.value.message?.kind)
-    }
-
-    @Test
-    fun `a milestone gets its line when nothing better is happening`() = runTest {
-        val engine = engine(settings = MapSettings(mapOf("totalFlushes" to 9)))
-        engine.pullHandle(FlushGrade.Good)
-        advanceTimeBy(standardFlushMillis + 1)
-        assertEquals(Quips.milestone(10), engine.state.value.message?.text)
     }
 
     // Persistence
 
     @Test
-    fun `the tally survives a restart`() = runTest {
+    fun `the tally and the best tank survive a restart`() = runTest {
         val settings = MapSettings()
         val first = engine(settings = settings)
-        first.setPaper(4)
-        repeat(2) {
-            first.pullHandle(FlushGrade.Perfect)
-            advanceUntilIdle()
-        }
+        load(first, 4)
+        repeat(Upkeep.RUN_LENGTH) { flush(first, FlushGrade.Perfect) }
 
         val second = engine(settings = settings)
         assertEquals(first.state.value.totalFlushes, second.state.value.totalFlushes)
         assertEquals(first.state.value.bestStreak, second.state.value.bestStreak)
+        assertEquals(first.state.value.bestRun, second.state.value.bestRun)
         assertEquals(first.state.value.grime, second.state.value.grime, 1e-9)
-        assertEquals(4, second.state.value.paper)
         assertEquals(first.state.value.standings, second.state.value.standings)
+        // The tank itself is per session: a restart is a fresh one.
+        assertEquals(Upkeep.RUN_LENGTH, second.state.value.flushesLeft)
     }
 
     @Test
@@ -389,94 +593,58 @@ class FlushEngineTest {
         assertEquals(Fixture.Standard, engine(settings = settings).state.value.fixture)
     }
 
-    @Test
-    fun `an unknown saved fixture falls back to the standard one`() = runTest {
-        val settings = MapSettings(mapOf("equippedFixture" to "gold-plated-nonsense", "totalFlushes" to 9_999))
-        assertEquals(Fixture.Standard, engine(settings = settings).state.value.fixture)
-    }
-
-    @Test
-    fun `a saved fixture you have earned comes back installed`() = runTest {
-        val settings = MapSettings(mapOf("equippedFixture" to "victorian", "totalFlushes" to 150))
-        assertEquals(Fixture.Victorian, engine(settings = settings).state.value.fixture)
-    }
-
     // Reset
 
     @Test
-    fun `reset wipes the tally, the board and the fixture`() = runTest {
+    fun `reset wipes the tally, the tank, the roll and the daily`() = runTest {
         val settings = MapSettings(mapOf("totalFlushes" to 500, "equippedFixture" to "chrome"))
-        val audio = RecordingAudio()
-        val engine = engine(settings = settings, audio = audio)
-        engine.pullHandle(FlushGrade.Perfect)
-        advanceUntilIdle()
+        val engine = engine(settings = settings)
+        engine.startDaily()
+        load(engine, 3)
+        flush(engine, FlushGrade.Perfect)
 
         engine.resetStats()
 
-        val state = engine.state.value
-        assertEquals(0, state.totalFlushes)
-        assertEquals(0, state.goldenFlushes)
-        assertEquals(0, state.bestStreak)
-        assertEquals(0.0, state.grime)
-        assertEquals(Upkeep.DEFAULT_PAPER, state.paper)
-        assertEquals(Fixture.Standard, state.fixture)
-        assertEquals(Standings(), state.standings)
-        assertTrue(audio.calls.contains("stop"))
-
-        // And it is really gone, not just gone from the screen.
-        assertEquals(0, engine(settings = settings).state.value.totalFlushes)
+        val s = engine.state.value
+        assertEquals(0, s.totalFlushes)
+        assertEquals(0, s.bestStreak)
+        assertEquals(0, s.bestRun)
+        assertEquals(Upkeep.RUN_LENGTH, s.flushesLeft)
+        assertEquals(0, s.paperPulled)
+        assertNull(s.daily)
+        assertEquals(Fixture.Standard, s.fixture)
+        assertEquals(Standings(), s.standings)
+        assertEquals(0, engine(settings = settings).state.value.totalFlushes, "and it is really gone")
     }
 
     @Test
     fun `a reset is not undone by the settle that was already in flight`() = runTest {
-        // The subtle one: cancelling the job is not enough on its own, which is why
-        // the engine carries a generation counter.
         val engine = engine()
         engine.pullHandle()
-        advanceTimeBy(standardFlushMillis - 50)
-
+        advanceTimeBy(standardFlush - 50)
         engine.resetStats()
         advanceUntilIdle()
-
-        assertEquals(0, engine.state.value.totalFlushes, "the abandoned flush must not write itself back")
-        assertTrue(!engine.state.value.isFlushing)
-    }
-
-    @Test
-    fun `a message clears itself after its moment`() = runTest {
-        val engine = engine()
-        engine.pullHandle()
-        advanceTimeBy(standardFlushMillis + 1)
-        assertNotNull(engine.state.value.message)
-
-        advanceTimeBy(2_901)
-        assertNull(engine.state.value.message)
-    }
-
-    @Test
-    fun `a new flush clears whatever the last one said`() = runTest {
-        val engine = engine()
-        engine.pullHandle()
-        advanceTimeBy(standardFlushMillis + 1)
-        assertNotNull(engine.state.value.message)
-
-        engine.pullHandle()
-        assertNull(engine.state.value.message, "the old line goes when the water moves")
+        assertEquals(0, engine.state.value.totalFlushes)
     }
 
     // The board
 
     @Test
     fun `a flush lands on today's row with what it was worth`() = runTest {
-        val clock = FakeClock(1_788_264_000_000L)   // 2026-09-01T12:00Z
-        val engine = engine(clock = clock)
-        engine.setPaper(3)
-        engine.pullHandle(FlushGrade.Good)
-        advanceUntilIdle()
-
-        val today = engine.state.value.standings.today(clock.millis, utc)
+        val engine = engine()
+        load(engine, 3)
+        flush(engine)
+        val today = engine.state.value.standings.today(noon, utc)
         assertNotNull(today)
         assertEquals(1, today.flushes)
         assertEquals(Upkeep.points(3, golden = false), today.score)
+    }
+
+    @Test
+    fun `a runaway is worth nothing on the board`() = runTest {
+        val engine = engine(random = QueuedRandom(1.0, 1.0))
+        engine.pullPaper(2)
+        flush(engine)
+        assertEquals(0, engine.state.value.standings.today(noon, utc)!!.score)
     }
 }

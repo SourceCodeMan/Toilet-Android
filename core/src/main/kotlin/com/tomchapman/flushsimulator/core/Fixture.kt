@@ -33,6 +33,16 @@ data class Fixture(
     val tolerance: Double,
 
     /**
+     * What a flush here is worth, as a multiplier.
+     *
+     * Deliberately the inverse of [tolerance]: the drain that swallows anything pays
+     * the least, and the one that blocks if you look at it pays the most. That is what
+     * turns the collection from a set of skins into a choice — without it there is
+     * never a reason not to equip the most forgiving toilet you own.
+     */
+    val payout: Double,
+
+    /**
      * The icon for the picker chip, as the original SF Symbol name — a stable
      * identifier, mapped to a real drawable by the Compose layer.
      */
@@ -69,6 +79,7 @@ data class Fixture(
             blurb = "The one you already have.",
             unlockAt = 0,
             tolerance = 1.0,
+            payout = 1.00,        // The bar everything else is measured against.
             symbol = "house.fill",
             surface = RoomSurface.Tile,
             profile = FlushProfile.Standard,
@@ -82,6 +93,7 @@ data class Fixture(
             blurb = "No plumbing. Just gravity and hope.",
             unlockAt = 25,
             tolerance = 0.55,
+            payout = 1.60,        // Blocks constantly, so it has to pay for the trouble.
             symbol = "tree.fill",
             surface = RoomSurface.Planks,
             profile = FlushProfile(
@@ -111,6 +123,7 @@ data class Fixture(
             blurb = "A high cistern, and no hurry whatsoever.",
             unlockAt = 100,
             tolerance = 0.8,
+            payout = 1.25,        // Fussy enough to be worth something.
             symbol = "crown.fill",
             surface = RoomSurface.Ornate,
             profile = FlushProfile(
@@ -140,6 +153,7 @@ data class Fixture(
             blurb = "Commercial grade. Startles everyone.",
             unlockAt = 400,
             tolerance = 1.9,
+            payout = 0.70,        // Swallows nearly anything, so it pays the least.
             symbol = "bolt.fill",
             surface = RoomSurface.Panels,
             profile = FlushProfile(
@@ -169,6 +183,7 @@ data class Fixture(
             blurb = "In space, everyone can hear it.",
             unlockAt = 1_000,
             tolerance = 1.45,
+            payout = 0.85,        // Forgiving, and priced like it.
             symbol = "moon.stars.fill",
             surface = RoomSurface.Bulkhead,
             profile = FlushProfile(

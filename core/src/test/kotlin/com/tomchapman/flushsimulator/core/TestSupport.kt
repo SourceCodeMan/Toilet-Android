@@ -29,8 +29,15 @@ class QueuedRandom(
 ) : Random() {
     private val queue = ArrayDeque(doubles.toList())
 
+    /** Whether the next sheet off the roll is the one-in-a-hundred. Off by default. */
+    var cash = false
+
     override fun nextBits(bitCount: Int): Int = 0
     override fun nextDouble(): Double = if (queue.isEmpty()) default else queue.removeFirst()
+
+    // The cash roll asks for an int below the odds and wins on zero, so a test that
+    // has not asked for money must never get it by accident.
+    override fun nextInt(until: Int): Int = if (cash) 0 else until - 1
 }
 
 /** Records what the engine asked the device to do. */

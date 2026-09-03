@@ -17,6 +17,8 @@ class Quips(private val random: Random = Random.Default) {
     fun afterFlushLine(): String = pick(afterFlush)
     fun busyLine(): String = pick(whileBusy)
     fun goldenLine(): String = pick(golden)
+    fun unwipedLine(): String = pick(unwiped)
+    fun cashLine(): String = pick(cash)
 
     private fun pick(lines: List<String>): String {
         val choices = if (lines.size > 1) lines.filter { it != lastLine } else lines
@@ -72,6 +74,30 @@ class Quips(private val random: Random = Random.Default) {
             "It's still going. Look at it go.",
             "Easy, tiger.",
             "You cannot rush a classic.",
+        )
+
+        /** For a flush with nothing in it. There is no delicate way to raise this. */
+        private val unwiped = listOf(
+            "You didn't wipe. We both know it.",
+            "Flushed. Unwiped. Bold strategy.",
+            "Nothing in, nothing out. Suspicious.",
+            "A courtesy flush at best.",
+            "No paper? Brave. Grim, but brave.",
+            "You are simply flushing water now.",
+            "The roll is RIGHT THERE.",
+            "Somewhere, a plumber winced.",
+            "That's between you and the porcelain.",
+        )
+
+        /** For the one roll in a hundred that is not paper. */
+        private val cash = listOf(
+            "You just flushed rent.",
+            "Money down the drain. Literally.",
+            "The bowl has never been richer.",
+            "Somewhere, an accountant screamed.",
+            "That was a LOT of hundreds.",
+            "Benjamin would be proud.",
+            "Liquidity, achieved.",
         )
 
         private val golden = listOf(

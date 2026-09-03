@@ -47,6 +47,13 @@ object Upkeep {
     const val DEFAULT_PAPER = 2
 
     /**
+     * What an uncut sheet counts as. The bowl keeps drawing off the roll for the whole
+     * flush, so it is far past anything you could have hung there on purpose — which
+     * is the point: forgetting to tear is not a small mistake.
+     */
+    const val RUNAWAY_PAPER = 12
+
+    /**
      * Score multiplier for a flush, by squares used.
      *
      * Rises fast then flattens, so there is a real reason to push past two and a
@@ -76,6 +83,37 @@ object Upkeep {
         val base = 100.0 * multiplierForPaper(paper)
         return (if (golden) base * GOLDEN_BONUS else base).roundToInt()
     }
+
+    // The lucky roll
+
+    /**
+     * One roll in this many comes off the wall as hundreds instead of paper.
+     *
+     * Benjamin's idea, and a good one: the roll is the thing you touch before every
+     * single flush, so it is exactly where a rare surprise pays off. Rolled once per
+     * sheet rather than per pull, or you could just yo-yo the roll until it hit.
+     */
+    const val CASH_ODDS = 100
+
+    /**
+     * What flushing money is worth. Absurd on purpose — this should be the best thing
+     * that happens to you all week.
+     */
+    const val CASH_MULTIPLIER = 10.0
+
+    // The tank
+
+    /**
+     * Flushes in one tank. The whole reason a session has a shape: without a bound,
+     * nothing you do is a decision, because there is always another flush.
+     */
+    const val RUN_LENGTH = 20
+
+    /**
+     * Scrubbing runs clean water through, so it costs the tank the same as a flush.
+     * This is what gives grime a price — a free wand makes neglect free.
+     */
+    const val WAND_COST = 1
 
     // Gold
 
