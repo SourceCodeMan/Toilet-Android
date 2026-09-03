@@ -1,10 +1,10 @@
 package com.tomchapman.flushsimulator.ui
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -14,8 +14,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -24,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -31,12 +33,18 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tomchapman.flushsimulator.core.Fixture
 import com.tomchapman.flushsimulator.core.Palette
 import com.tomchapman.flushsimulator.core.Upkeep
+
+/** A multiplier the way it reads on a chip: 1.6, not 1.60; 1, not 1.00. */
+private fun payoutLabel(payout: Double): String =
+    "×" + "%.2f".format(payout).trimEnd('0').trimEnd('.')
 
 /**
  * The row of toilets you own, plus a hint of the next one.
@@ -82,7 +90,7 @@ fun FixtureBar(
                         contentDescription = if (locked) {
                             "${fixture.name}, locked. ${fixture.unlockAt} flushes to unlock."
                         } else {
-                            "${fixture.name}. ${fixture.blurb}"
+                            "${fixture.name}, pays ${payoutLabel(fixture.payout).drop(1)} times. ${fixture.blurb}"
                         }
                         if (isOn) stateDescription = "Installed"
                     }
@@ -106,136 +114,88 @@ fun FixtureBar(
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                 )
+                // The payout is the whole reason to pick one over another, so it has
+                // to be on the chip rather than buried in a blurb.
+                if (!locked) {
+                    Text(
+                        text = payoutLabel(fixture.payout),
+                        color = tint.copy(alpha = if (isOn) 0.9f else 0.55f),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Black,
+                    )
+                }
             }
         }
     }
 }
 
 /**
- * Paper going in, filth coming out — and the plunger, when it all goes wrong.
+ * The wand, and a word about what the bowl needs.
  *
- * One strip that swaps its whole contents while the bowl is blocked, because when it
- * is blocked there is exactly one thing worth doing.
+ * Paper and the plunger used to live here as a stepper and a big red button. Both are
+ * objects in the room now — see `PaperRoll` and `Plunger` — so what is left is the
+ * wand, and a line telling you which step of a blockage you are on. Without that line
+ * a blocked bowl offers no clue that the plunger on the floor is the answer.
  */
 @Composable
 fun UpkeepBar(
-    paper: Int,
     grime: Double,
     isFlushing: Boolean,
     isClogged: Boolean,
+    isPaperTrailing: Boolean,
     plunges: Int,
     palette: Palette,
-    onPaper: (Int) -> Unit,
     onWand: () -> Unit,
-    onPlunge: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Box(modifier.fillMaxWidth().height(40.dp), contentAlignment = Alignment.Center) {
-        if (isClogged) {
-            Plunger(plunges, onPlunge)
-        } else {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                PaperPicker(paper, palette, onPaper)
-                Box(Modifier.weight(1f))
-                Wand(grime, isFlushing, palette, onWand)
-            }
+    Row(
+        modifier.fillMaxWidth().height(40.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        // The sign gets whatever the wand leaves, and fits its type to that.
+        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+            if (isClogged) Instruction(isPaperTrailing, plunges)
         }
+        Wand(grime, isFlushing, palette, onWand)
     }
 }
 
+/**
+ * What to do next, in the order it has to happen.
+ *
+ * Only a sign. The plunger on the floor is the way to clear a blockage.
+ */
 @Composable
-private fun Plunger(plunges: Int, onPlunge: () -> Unit) {
+private fun Instruction(isPaperTrailing: Boolean, plunges: Int, modifier: Modifier = Modifier) {
     Row(
-        Modifier
-            .fillMaxWidth()
-            .height(40.dp)
+        modifier
+            .height(36.dp)
             .clip(RoundedCornerShape(percent = 50))
             .background(Color(red = 0.86f, green = 0.34f, blue = 0.24f))
-            .clickable(onClick = onPlunge)
-            .semantics {
-                contentDescription = "Plunge"
-                stateDescription = "$plunges of ${Upkeep.PLUNGES_TO_CLEAR}"
-            },
+            .padding(horizontal = 13.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
+        horizontalArrangement = Arrangement.spacedBy(7.dp),
     ) {
         Icon(
-            imageVector = symbolFor("arrow.down.circle.fill"),
+            imageVector = symbolFor(if (isPaperTrailing) "scissors" else "arrow.down.circle.fill"),
             contentDescription = null,
             tint = Color.White,
-            modifier = Modifier.size(17.dp),
+            modifier = Modifier.size(15.dp),
         )
-        Text(
-            text = "PLUNGE",
-            color = Color.White,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Black,
-            letterSpacing = 0.5.sp,
-            modifier = Modifier.padding(horizontal = 9.dp),
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            repeat(Upkeep.PLUNGES_TO_CLEAR) { i ->
-                Box(
-                    Modifier
-                        .size(7.dp)
-                        .clip(CircleShape)
-                        .background(if (i < plunges) Color.White else Color.White.copy(alpha = 0.32f)),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun PaperPicker(paper: Int, palette: Palette, onPaper: (Int) -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        StepButton("Remove", "One square less", palette, paper > Upkeep.PAPER_RANGE.first) { onPaper(paper - 1) }
-        Column(
-            Modifier.width(58.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(
-                text = paper.toString(),
-                color = palette.ink.toColor(),
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Black,
-            )
-            Text(
-                text = if (paper == 1) "SQUARE" else "SQUARES",
-                color = palette.ink.toColor().copy(alpha = 0.55f),
-                fontSize = 8.sp,
-                fontWeight = FontWeight.Bold,
-            )
-        }
-        StepButton("Add", "One square more", palette, paper < Upkeep.PAPER_RANGE.last) { onPaper(paper + 1) }
-    }
-}
-
-@Composable
-private fun StepButton(
-    label: String,
-    spoken: String,
-    palette: Palette,
-    enabled: Boolean,
-    onClick: () -> Unit,
-) {
-    Box(
-        Modifier
-            .size(32.dp)
-            .clip(CircleShape)
-            .background(palette.ink.toColor().copy(alpha = 0.09f))
-            .clickable(enabled = enabled, onClick = onClick)
-            // The glyph is a plus or a minus drawn as text, which reads as nothing.
-            .semantics { contentDescription = spoken },
-        contentAlignment = Alignment.Center,
-    ) {
-        // A plain glyph rather than an icon: a plus and a minus are two strokes.
-        val tint = palette.ink.toColor().copy(alpha = if (enabled) 0.75f else 0.3f)
-        Text(
-            text = if (label == "Add") "+" else "−",
-            color = tint,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.Black,
+        // Shrinks rather than truncates, as the Swift's minimumScaleFactor does: the
+        // longer line is a shade too wide for a 393dp phone at full size, and a sign
+        // that reads "Swipe acro..." is no sign at all.
+        BasicText(
+            text = if (isPaperTrailing) {
+                "Swipe across the paper to cut it free"
+            } else {
+                "Drag the plunger over the bowl · $plunges/${Upkeep.PLUNGES_TO_CLEAR}"
+            },
+            style = TextStyle(color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            autoSize = TextAutoSize.StepBased(minFontSize = 9.5.sp, maxFontSize = 12.sp, stepSize = 0.25.sp),
         )
     }
 }
@@ -266,9 +226,7 @@ private fun Wand(grime: Double, isFlushing: Boolean, palette: Palette, onWand: (
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(7.dp),
     ) {
-        androidx.compose.foundation.Canvas(Modifier.size(width = 16.dp, height = 22.dp).rotate(-14f)) {
-            drawWand(tint)
-        }
+        Canvas(Modifier.size(width = 16.dp, height = 22.dp).rotate(-14f)) { drawWand(tint) }
         Box(
             Modifier
                 .width(46.dp)
@@ -301,7 +259,7 @@ private fun DrawScope.drawWand(tint: Color) {
         color = colour,
         topLeft = Offset(cx - w / 2, cy + dy - h / 2),
         size = Size(w, h),
-        cornerRadius = androidx.compose.ui.geometry.CornerRadius(minOf(w, h) / 2),
+        cornerRadius = CornerRadius(minOf(w, h) / 2),
     )
 
     capsule(2.4f, 11f, -5.5f, tint)                       // shaft
@@ -309,14 +267,6 @@ private fun DrawScope.drawWand(tint: Color) {
     capsule(5.5f, 2f, 1.2f, tint)                         // collar
 
     // The head: blunt and bulbous, not bristled.
-    drawOval(
-        color = tint,
-        topLeft = Offset(cx - 6f, cy + 6.4f - 4.75f),
-        size = Size(12f, 9.5f),
-    )
-    drawOval(
-        color = tint.copy(alpha = 0.45f),
-        topLeft = Offset(cx - 3.5f, cy + 5f - 2f),
-        size = Size(7f, 4f),
-    )
+    drawOval(color = tint, topLeft = Offset(cx - 6f, cy + 6.4f - 4.75f), size = Size(12f, 9.5f))
+    drawOval(color = tint.copy(alpha = 0.45f), topLeft = Offset(cx - 3.5f, cy + 5f - 2f), size = Size(7f, 4f))
 }

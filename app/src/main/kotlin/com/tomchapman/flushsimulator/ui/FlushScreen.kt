@@ -31,10 +31,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.tomchapman.flushsimulator.board.BoardClient
+import com.tomchapman.flushsimulator.core.DailyChallenge
 import com.tomchapman.flushsimulator.core.Fixture
 import com.tomchapman.flushsimulator.core.FlushAudio
-import com.tomchapman.flushsimulator.core.Haptics
 import com.tomchapman.flushsimulator.core.FlushEngine
+import com.tomchapman.flushsimulator.core.FlushState
+import com.tomchapman.flushsimulator.core.Haptics
 import com.tomchapman.flushsimulator.core.Palette
 import com.tomchapman.flushsimulator.core.Settings
 import kotlinx.coroutines.flow.StateFlow
@@ -78,10 +80,26 @@ fun FlushScreen(
     val dark = isSystemInDarkTheme()
     var confirmingReset by remember { mutableStateOf(false) }
     var showingBoard by remember { mutableStateOf(false) }
+    var showingDaily by remember { mutableStateOf(false) }
+    var showingRunEnd by remember { mutableStateOf(false) }
     var muted by remember(audio) { mutableStateOf(audio.isMuted) }
+
+    // Where the toilet's feet land, in root pixels, so the floor can meet them.
+    var floorY by remember { mutableStateOf<Float?>(null) }
 
     // Gold is an overlay on whatever is installed, not a fixture of its own.
     val palette = if (state.showsGold) Palette.golden(dark) else state.fixture.palette(dark)
+
+    // The tank running dry is the one event that has to interrupt: there is no legal
+    // move behind the summary, and only its button starts a new one.
+    LaunchedEffect(state.isRunOver) {
+        if (state.isRunOver) showingRunEnd = true
+    }
+    // Reaching for the handle on a dry tank brings the summary back, so putting it
+    // away by accident is not the end of the game.
+    LaunchedEffect(state.dryTankAsks) {
+        if (state.dryTankAsks > 0 && state.isRunOver) showingRunEnd = true
+    }
 
     val pulse by rememberInfiniteTransition(label = "hint").animateFloat(
         initialValue = 0.3f,
@@ -94,7 +112,7 @@ fun FlushScreen(
     )
 
     Box(modifier.fillMaxSize()) {
-        Canvas(Modifier.fillMaxSize()) { drawBathroom(palette, state.fixture.surface) }
+        Canvas(Modifier.fillMaxSize()) { drawBathroom(palette, state.fixture.surface, floorY) }
 
         Column(
             Modifier
@@ -107,6 +125,8 @@ fun FlushScreen(
             Header(
                 palette = palette,
                 isMuted = muted,
+                isDailyDone = state.isDailyDone,
+                onDaily = { showingDaily = true },
                 onLeaderboard = { showingBoard = true },
                 onToggleMute = {
                     muted = !muted
@@ -114,13 +134,15 @@ fun FlushScreen(
                 },
             )
 
-            Toilet(
+            BathroomStage(
+                state = state,
                 palette = palette,
-                profile = state.activeProfile,
-                grime = state.grime,
-                flushStartMillis = state.flushStartMillis,
                 onPull = engine::pullHandle,
                 onPress = engine::handleTouched,
+                onPullPaper = engine::pullPaper,
+                onCutPaper = engine::cutPaper,
+                onPump = engine::plunge,
+                onFloorLine = { floorY = it },
                 modifier = Modifier.weight(1f).fillMaxWidth(),
             )
 
@@ -133,28 +155,29 @@ fun FlushScreen(
             )
 
             UpkeepBar(
-                paper = state.paper,
                 grime = state.grime,
                 isFlushing = state.isFlushing,
                 isClogged = state.isClogged,
+                isPaperTrailing = state.isPaperTrailing,
                 plunges = state.plunges,
                 palette = palette,
-                onPaper = engine::setPaper,
                 onWand = engine::useWand,
-                onPlunge = engine::plunge,
             )
 
             StatsCard(
                 palette = palette,
                 dark = dark,
                 totalFlushes = state.totalFlushes,
-                goldenFlushes = state.goldenFlushes,
+                flushesLeft = state.flushesLeft,
+                runScore = state.runScore,
+                isRunOver = state.isRunOver,
                 streak = state.streak,
                 bestStreak = state.bestStreak,
+                onTank = { showingRunEnd = true },
                 onLongPress = { confirmingReset = true },
             )
 
-            Hint(palette, state.totalFlushes, pulse)
+            Hint(palette, hintText(state), pulse)
         }
 
         state.message?.let { message ->
@@ -168,6 +191,10 @@ fun FlushScreen(
 
         if (state.celebrationStartMillis != null) {
             Celebration(state.celebrationStartMillis!!, Modifier.fillMaxSize())
+        }
+
+        if (state.isCashPayout) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CashPayout() }
         }
     }
 
@@ -183,6 +210,38 @@ fun FlushScreen(
                 client = client,
                 nowMillis = System.currentTimeMillis(),
                 onClose = { showingBoard = false },
+            )
+        }
+    }
+
+    if (showingDaily) {
+        Dialog(onDismissRequest = { showingDaily = false }) {
+            DailySheet(
+                challenge = engine.challenge,
+                daily = state.daily,
+                palette = palette,
+                onStart = engine::startDaily,
+                onClose = { showingDaily = false },
+            )
+        }
+    }
+
+    if (showingRunEnd) {
+        // Not dismissable by tapping outside or by the back button: the tank is dry and
+        // only the button starts a new one. Swiping it away was a dead end.
+        Dialog(
+            onDismissRequest = {},
+            properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
+        ) {
+            RunSummary(
+                score = state.runScore,
+                best = state.bestRun,
+                bestStreak = state.bestStreak,
+                palette = palette,
+                onAgain = {
+                    engine.startRun()
+                    showingRunEnd = false
+                },
             )
         }
     }
@@ -205,6 +264,16 @@ fun FlushScreen(
             },
         )
     }
+}
+
+/** While a daily is running the hint's job is to say where you are in it. */
+internal fun hintText(state: FlushState): String {
+    val run = state.daily
+    if (run != null && !run.isComplete) {
+        val c = state.challenge
+        return "Daily #${c.number} · ${run.marks.size}/${DailyChallenge.FLUSH_COUNT} · ${c.paperTarget} squares"
+    }
+    return if (state.totalFlushes == 0) "Hold the handle" else "Hold, then let go in the window"
 }
 
 /** Falling gold, driven off its own frame clock. */

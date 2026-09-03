@@ -7,6 +7,12 @@ import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.ArrowCircleDown
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Autorenew
+import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.ContentCut
+import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Wc
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Cyclone
@@ -64,6 +70,13 @@ fun symbolFor(name: String): ImageVector = when (name) {
     "flag.checkered" -> Icons.Filled.Flag
     "hourglass" -> Icons.Filled.HourglassTop
     "arrow.down.circle.fill" -> Icons.Filled.ArrowCircleDown
+    "calendar" -> Icons.Filled.CalendarToday
+    "scissors" -> Icons.Filled.ContentCut
+    "square.and.arrow.up" -> Icons.Filled.Share
+    "toilet.fill" -> Icons.Filled.Wc
+    "square.stack.3d.up.fill" -> Icons.Filled.Layers
+    "drop.triangle.fill" -> Icons.Filled.WaterDrop
+    "arrow.triangle.2.circlepath" -> Icons.Filled.Autorenew
 
     // A name that reaches here is a bug in the table, not in the data, and a missing
     // glyph is not worth crashing over.

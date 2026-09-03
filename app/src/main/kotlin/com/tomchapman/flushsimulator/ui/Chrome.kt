@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tomchapman.flushsimulator.core.FlushState
@@ -35,6 +36,8 @@ import com.tomchapman.flushsimulator.core.Rank
 fun Header(
     palette: Palette,
     isMuted: Boolean,
+    isDailyDone: Boolean,
+    onDaily: () -> Unit,
     onLeaderboard: () -> Unit,
     onToggleMute: () -> Unit,
     modifier: Modifier = Modifier,
@@ -44,10 +47,13 @@ fun Header(
             Text(
                 text = "FLUSH SIMULATOR",
                 color = palette.ink.toColor(),
-                fontSize = 23.sp,
+                // Three buttons sit beside this now; it has to give rather than wrap.
+                fontSize = 20.sp,
                 fontWeight = FontWeight.Black,
                 fontFamily = FontFamily.SansSerif,
-                letterSpacing = 1.2.sp,
+                letterSpacing = 1.0.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
             Text(
                 text = "2026 Deluxe Porcelain Edition",
@@ -57,6 +63,12 @@ fun Header(
             )
         }
 
+        RoundButton(
+            symbol = if (isDailyDone) "checkmark.seal.fill" else "calendar",
+            label = "Daily flush",
+            palette = palette,
+            onClick = onDaily,
+        )
         RoundButton("list.number", "Leaderboard", palette, onLeaderboard)
         RoundButton(
             symbol = if (isMuted) "speaker.slash.fill" else "speaker.wave.2.fill",
@@ -97,9 +109,12 @@ fun StatsCard(
     palette: Palette,
     dark: Boolean,
     totalFlushes: Int,
-    goldenFlushes: Int,
+    flushesLeft: Int,
+    runScore: Int,
+    isRunOver: Boolean,
     streak: Int,
     bestStreak: Int,
+    onTank: () -> Unit,
     onLongPress: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -122,9 +137,13 @@ fun StatsCard(
         verticalArrangement = Arrangement.spacedBy(11.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Stat("LIFETIME FLUSHES", totalFlushes.toString(), palette, Modifier.weight(1f))
+            // A dry tank is tappable: it brings the summary back if it was put away.
+            Stat(
+                "TANK", flushesLeft.toString(), palette,
+                Modifier.weight(1f).combinedClickable(enabled = isRunOver, onClick = onTank),
+            )
             Divider(palette)
-            Stat("GOLDEN", goldenFlushes.toString(), palette, Modifier.weight(1f))
+            Stat("RUN SCORE", java.text.NumberFormat.getIntegerInstance().format(runScore), palette, Modifier.weight(1f))
             Divider(palette)
             // What you are on while a run is alive, and what you managed once it is over.
             Stat(
@@ -198,11 +217,11 @@ private fun Divider(palette: Palette) {
     )
 }
 
-/** A tap grades as a half flush, so the hint has to say hold. */
+/** One line under everything, pulsing so it reads as a prompt rather than a label. */
 @Composable
-fun Hint(palette: Palette, totalFlushes: Int, pulse: Float, modifier: Modifier = Modifier) {
+fun Hint(palette: Palette, text: String, pulse: Float, modifier: Modifier = Modifier) {
     Text(
-        text = if (totalFlushes == 0) "Hold the handle" else "Hold, then let go in the window",
+        text = text,
         color = palette.ink.toColor().copy(alpha = pulse),
         fontSize = 12.sp,
         fontWeight = FontWeight.SemiBold,

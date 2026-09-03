@@ -31,8 +31,14 @@ import com.tomchapman.flushsimulator.core.RoomSurface
  */
 private const val HORIZON = 0.605f
 
-fun DrawScope.drawBathroom(palette: Palette, surface: RoomSurface) {
-    val y = size.height * HORIZON
+/**
+ * @param floorY where the toilet's feet actually land, in this canvas's pixels. Null
+ * falls back to [HORIZON], which is only right if nothing above has been rescaled.
+ */
+fun DrawScope.drawBathroom(palette: Palette, surface: RoomSurface, floorY: Float? = null) {
+    // Measured beats tuned: a hand-picked fraction stops being the floor the moment
+    // anything above it changes scale.
+    val y = (floorY ?: size.height * HORIZON).coerceIn(size.height * 0.25f, size.height * 0.92f)
 
     // Wall, lit from above.
     drawRect(

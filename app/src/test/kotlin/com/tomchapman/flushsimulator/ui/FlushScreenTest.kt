@@ -8,11 +8,13 @@ import androidx.compose.ui.test.performTouchInput
 import com.github.takahirom.roborazzi.RobolectricDeviceQualifiers
 import com.tomchapman.flushsimulator.core.FlushEngine
 import com.tomchapman.flushsimulator.core.FlushGrade
+import com.tomchapman.flushsimulator.core.Upkeep
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -60,7 +62,7 @@ class FlushScreenTest {
         compose.mainClock.autoAdvance = false
         val own = CoroutineScope(Dispatchers.Main)
         scope = own
-        engine = FlushEngine(settings = MapSettings(saved), scope = own)
+        engine = FlushEngine(settings = MapSettings(saved), scope = own, random = kotlin.random.Random(7))
         compose.setContent { FlushScreen(engine) }
         compose.mainClock.advanceTimeByFrame()
     }
@@ -164,5 +166,97 @@ class FlushScreenTest {
         assertEquals(25, engine.state.value.totalFlushes)
         // And the twenty-fifth is what earns the outhouse.
         assertEquals("Unlocked — The Outhouse", engine.state.value.message?.text)
+    }
+
+    // The roll
+
+    @Test
+    fun `dragging the sheet down pulls squares, and a swipe across tears them off`() {
+        start()
+        val roll = compose.onNodeWithContentDescription("Toilet paper", substring = true)
+
+        roll.performTouchInput {
+            // One square is 26 of the roll's 232 design units.
+            val square = height / 232f * 26f
+            down(Offset(width / 2f, height * 0.3f))
+            advanceEventTime(50)
+            moveBy(Offset(0f, square * 3.4f))
+            advanceEventTime(50)
+            up()
+        }
+        compose.mainClock.advanceTimeByFrame()
+        assertEquals(3, engine.state.value.paperPulled)
+        assertFalse(engine.state.value.isPaperCut)
+
+        roll.performTouchInput {
+            down(Offset(width * 0.2f, height * 0.5f))
+            advanceEventTime(50)
+            moveBy(Offset(width * 0.6f, 0f))     // well past the 34-unit tear threshold
+            advanceEventTime(50)
+            up()
+        }
+        compose.mainClock.advanceTimeByFrame()
+        assertTrue("the sheet should be torn", engine.state.value.isPaperCut)
+        assertEquals(3, engine.state.value.loadedPaper)
+    }
+
+    // The plunger
+
+    /**
+     * An uncut sheet blocks the bowl every time, so the blockage here needs no luck;
+     * only that the sheet was not the one-in-a-hundred, which the seed settles.
+     */
+    private fun block() {
+        engine.pullPaper(2)
+        assertFalse(engine.state.value.isCashRoll)
+        engine.pullHandle(FlushGrade.Perfect)
+        advance((engine.state.value.activeProfile.duration * 1_000).toLong() + 1)
+        compose.mainClock.advanceTimeByFrame()
+        assertTrue("the bowl should be blocked", engine.state.value.isClogged)
+    }
+
+    @Test
+    fun `the plunger only bites once the paper is cut free`() {
+        start()
+        block()
+        assertTrue(engine.state.value.isPaperTrailing)
+
+        // Pumping with the paper still attached does nothing but complain.
+        engine.plunge()
+        assertEquals(0, engine.state.value.plunges)
+        assertEquals("It's still attached. Cut it.", engine.state.value.message?.text)
+
+        engine.cutPaper()
+        assertFalse(engine.state.value.isPaperTrailing)
+    }
+
+    @Test
+    fun `dragging the plunger onto the bowl and pushing down clears the blockage`() {
+        start()
+        block()
+        engine.cutPaper()
+        // The plunger reads whether the paper is attached off its last composition, so
+        // the cut has to reach the screen before the gesture starts.
+        advance(32)
+
+        compose.onNodeWithContentDescription("Plunger", substring = true).performTouchInput {
+            // The box is 104 design units wide. It rests at (410, 346) with its cup 46
+            // below centre; the bowl is at (235, 216). Move the cup onto the bowl, then
+            // push down a stroke at a time.
+            val unit = width / 104f
+            down(Offset(width / 2f, height * 0.3f))
+            advanceEventTime(30)
+            moveBy(Offset(-175f * unit, -176f * unit))
+            advanceEventTime(30)
+            repeat(Upkeep.PLUNGES_TO_CLEAR + 1) {
+                moveBy(Offset(0f, 26f * unit))     // past the 22-unit stroke
+                advanceEventTime(30)
+            }
+            up()
+        }
+        compose.mainClock.advanceTimeByFrame()
+
+        assertFalse("five pumps should clear it", engine.state.value.isClogged)
+        assertEquals(0, engine.state.value.plunges)
     }
 }
