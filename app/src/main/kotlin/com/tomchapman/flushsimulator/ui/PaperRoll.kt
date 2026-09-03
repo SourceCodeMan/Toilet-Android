@@ -6,6 +6,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
@@ -77,12 +78,16 @@ fun PaperRoll(
     val measurer = rememberTextMeasurer()
     val hanging = if (isCut) 0 else pulled
 
-    // Squares hanging when the drag began, so a pull is relative rather than absolute,
-    // and whether this gesture has already torn — one tear per gesture, however far
-    // the finger keeps going.
-    var base by remember { mutableStateOf<Int?>(null) }
-    var tornThisDrag by remember { mutableStateOf(false) }
-    var travel by remember { mutableStateOf(Offset.Zero) }
+    // The gesture reads these rather than closing over them, because it must not be
+    // restarted by its own effects — see the `pointerInput(Unit)` below.
+    val livePulled by rememberUpdatedState(pulled)
+    val liveCut by rememberUpdatedState(isCut)
+
+    // Where the drag began and what it has done since. Plain fields rather than
+    // compose state: the gesture writes them and reads them back on the very next
+    // callback, and none of them changes what is drawn, so recomposing fifty times
+    // across one swipe would be pure waste.
+    val drag = remember { Pull() }
 
     val stateLine = when {
         isCash -> "$hanging hundred dollar bills hanging. Flush them."
@@ -94,40 +99,36 @@ fun PaperRoll(
 
     Canvas(
         modifier
-            .pointerInput(pulled, isCut, isTrailing) {
+            // Keyed on nothing, deliberately. Keying this on `pulled` restarts the
+            // detector the moment the first square comes off — while the finger is
+            // still down — and every later move is dropped. A synthetic one-jump drag
+            // hides it, because the jump finishes before the restart lands; a real
+            // finger sends fifty small moves and only the first one survived. So the
+            // detector is started once and reads the live values instead.
+            .pointerInput(Unit) {
                 detectDragGestures(
-                    onDragStart = {
-                        travel = Offset.Zero
-                        base = null
-                        tornThisDrag = false
-                    },
-                    onDragEnd = {
-                        base = null
-                        tornThisDrag = false
-                    },
-                    onDragCancel = {
-                        base = null
-                        tornThisDrag = false
-                    },
-                ) { change, drag ->
+                    onDragStart = { drag.reset() },
+                    onDragEnd = { drag.reset() },
+                    onDragCancel = { drag.reset() },
+                ) { change, delta ->
                     change.consume()
-                    travel += drag
+                    drag.travel += delta
                     val unit = scale * density
-                    val across = abs(travel.x) / unit
-                    val down = abs(travel.y) / unit
+                    val across = abs(drag.travel.x) / unit
+                    val down = abs(drag.travel.y) / unit
 
                     // A decisive sideways swipe tears, but only once per gesture and
                     // only when there is something hanging to tear.
-                    if (!tornThisDrag && pulled > 0 && across > 34 && across > down * 1.3) {
-                        tornThisDrag = true
+                    if (!drag.torn && livePulled > 0 && across > 34 && across > down * 1.3) {
+                        drag.torn = true
                         onCut()
                         return@detectDragGestures
                     }
-                    if (tornThisDrag || isCut) return@detectDragGestures
+                    if (drag.torn || liveCut) return@detectDragGestures
 
-                    if (base == null) base = hanging
-                    val drawn = (travel.y / unit / PaperRoll.SQUARE).roundToInt()
-                    onPull((base ?: 0) + drawn)
+                    if (drag.base == null) drag.base = if (liveCut) 0 else livePulled
+                    val drawn = (drag.travel.y / unit / PaperRoll.SQUARE).roundToInt()
+                    onPull((drag.base ?: 0) + drawn)
                 }
             }
             .semantics {
@@ -151,6 +152,21 @@ fun PaperRoll(
 private val BILL_FACE = Color(red = 0.42f, green = 0.60f, blue = 0.44f)
 private val BILL_INK = Color(red = 0.16f, green = 0.31f, blue = 0.20f)
 private val TRAILING = Color(red = 0.86f, green = 0.34f, blue = 0.24f)
+
+/** One drag of the sheet. Mutated by the gesture and read straight back. */
+private class Pull {
+    var travel: Offset = Offset.Zero
+    /** Squares hanging when this drag began, so a pull is relative rather than absolute. */
+    var base: Int? = null
+    /** One tear per gesture, however far the finger keeps going afterwards. */
+    var torn = false
+
+    fun reset() {
+        travel = Offset.Zero
+        base = null
+        torn = false
+    }
+}
 
 private fun DrawScope.drawRoll(
     hanging: Int,

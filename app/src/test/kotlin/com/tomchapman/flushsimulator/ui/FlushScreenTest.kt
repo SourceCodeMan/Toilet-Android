@@ -179,9 +179,15 @@ class FlushScreenTest {
             // One square is 26 of the roll's 232 design units.
             val square = height / 232f * 26f
             down(Offset(width / 2f, height * 0.3f))
-            advanceEventTime(50)
-            moveBy(Offset(0f, square * 3.4f))
-            advanceEventTime(50)
+            // Delivered as twenty small moves, not one jump. A finger sends dozens of
+            // tiny deltas, and a gesture that restarts itself part-way through drops
+            // every one after the first -- which is exactly what a single synthetic
+            // jump cannot catch, and what shipped to the phone once already.
+            repeat(20) {
+                advanceEventTime(16)
+                moveBy(Offset(0f, square * 3.4f / 20f))
+            }
+            advanceEventTime(16)
             up()
         }
         compose.mainClock.advanceTimeByFrame()
@@ -245,12 +251,16 @@ class FlushScreenTest {
             // push down a stroke at a time.
             val unit = width / 104f
             down(Offset(width / 2f, height * 0.3f))
-            advanceEventTime(30)
-            moveBy(Offset(-175f * unit, -176f * unit))
-            advanceEventTime(30)
+            // Walked over in small steps, for the same reason as the roll above.
+            repeat(16) {
+                advanceEventTime(16)
+                moveBy(Offset(-175f * unit / 16f, -176f * unit / 16f))
+            }
             repeat(Upkeep.PLUNGES_TO_CLEAR + 1) {
-                moveBy(Offset(0f, 26f * unit))     // past the 22-unit stroke
-                advanceEventTime(30)
+                repeat(4) {
+                    advanceEventTime(16)
+                    moveBy(Offset(0f, 26f * unit / 4f))   // past the 22-unit stroke
+                }
             }
             up()
         }

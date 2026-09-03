@@ -7,6 +7,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -86,8 +87,11 @@ fun Plunger(
     // recompose when they change.
     val parked = remember { arrayOf(Offset.Zero) }
     val stroke = remember { Stroke() }
-    var travel by remember { mutableStateOf(Offset.Zero) }
-    var fingerY by remember { mutableStateOf(0f) }
+
+    // Read rather than closed over, so the detector below can be started once. Keying
+    // it on `isClogged` restarts it on the fifth pump — mid-gesture, finger still down.
+    val liveClogged by rememberUpdatedState(isClogged)
+    val liveBlocked by rememberUpdatedState(isBlockedByPaper)
 
     fun cupFor(at: Offset) = Offset(home.x + at.x, home.y + at.y + Plunger.CUP_DROP)
     fun seatedAt(at: Offset): Boolean {
@@ -110,37 +114,30 @@ fun Plunger(
     Canvas(
         modifier
             .alpha(if (isClogged) 1f else 0.7f)
-            .pointerInput(isClogged, isBlockedByPaper) {
+            .pointerInput(Unit) {
                 detectDragGestures(
-                    onDragStart = {
-                        travel = Offset.Zero
-                        fingerY = 0f
-                        stroke.anchor = null
-                        stroke.seated = false
-                    },
+                    onDragStart = { stroke.reset() },
                     onDragEnd = {
                         // Only an actual blockage earns a place in the bowl, and only if
                         // it seated. Anything else goes back to the corner — otherwise a
                         // stray drag during ordinary play leaves it standing on the seat.
-                        if (isClogged && stroke.seated) {
+                        if (liveClogged && stroke.seated) {
                             parked[0] = stroke.restingOffset
                             onOffset(stroke.restingOffset)
                         } else {
                             goHome()
                         }
-                        stroke.anchor = null
-                        stroke.seated = false
+                        stroke.reset()
                     },
                     onDragCancel = {
                         goHome()
-                        stroke.anchor = null
-                        stroke.seated = false
+                        stroke.reset()
                     },
-                ) { change, drag ->
+                ) { change, delta ->
                     change.consume()
-                    travel += Offset(drag.x / unit, drag.y / unit)
-                    fingerY += drag.y / unit
-                    val moved = parked[0] + travel
+                    stroke.travel += Offset(delta.x / unit, delta.y / unit)
+                    stroke.fingerY += delta.y / unit
+                    val moved = parked[0] + stroke.travel
                     onOffset(moved)
 
                     // Seating latches. A downstroke pushes the cup well past the bowl's
@@ -151,20 +148,20 @@ fun Plunger(
                         stroke.seated = true
                         stroke.restingOffset = moved
                     }
-                    if (!isClogged || isBlockedByPaper || !stroke.seated) {
+                    if (!liveClogged || liveBlocked || !stroke.seated) {
                         stroke.anchor = null
                         return@detectDragGestures
                     }
                     val anchor = stroke.anchor
                     if (anchor == null) {
-                        stroke.anchor = fingerY
+                        stroke.anchor = stroke.fingerY
                         return@detectDragGestures
                     }
-                    if (fingerY - anchor > Plunger.STROKE_TRAVEL) {
+                    if (stroke.fingerY - anchor > Plunger.STROKE_TRAVEL) {
                         onPump()                    // a completed downstroke
-                        stroke.anchor = fingerY
-                    } else if (anchor - fingerY > Plunger.STROKE_TRAVEL) {
-                        stroke.anchor = fingerY     // came back up, ready for the next
+                        stroke.anchor = stroke.fingerY
+                    } else if (anchor - stroke.fingerY > Plunger.STROKE_TRAVEL) {
+                        stroke.anchor = stroke.fingerY   // came back up, ready for the next
                     }
                 }
             }
@@ -191,11 +188,22 @@ fun Plunger(
 
 /** The stroke in progress. A plain object, mutated by the gesture and read straight back. */
 private class Stroke {
+    /** How far the drag has moved, in stage units. */
+    var travel: Offset = Offset.Zero
+    /** Vertical travel alone, which is what a pump is measured against. */
+    var fingerY = 0f
     var anchor: Float? = null
     /** Set once the cup reaches the bowl, and held for the rest of the drag. */
     var seated = false
     /** Where it first sat down, so releasing puts it back there rather than wherever the last downstroke ended. */
     var restingOffset: Offset = Offset.Zero
+
+    fun reset() {
+        travel = Offset.Zero
+        fingerY = 0f
+        anchor = null
+        seated = false
+    }
 }
 
 private fun DrawScope.drawPlunger() {
