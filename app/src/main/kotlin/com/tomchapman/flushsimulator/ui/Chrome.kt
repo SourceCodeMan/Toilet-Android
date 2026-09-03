@@ -111,7 +111,13 @@ fun StatsCard(
             .fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
             .background(palette.porcelainLight.toColor().copy(alpha = if (dark) 0.14f else 0.6f))
-            .combinedClickable(onClick = {}, onLongClick = onLongPress)
+            // Without a label the long press is undiscoverable: TalkBack announces
+            // available actions, and an unlabelled one is not among them.
+            .combinedClickable(
+                onClick = {},
+                onLongClickLabel = "Erase your flushing legacy",
+                onLongClick = onLongPress,
+            )
             .padding(horizontal = 16.dp, vertical = 13.dp),
         verticalArrangement = Arrangement.spacedBy(11.dp),
     ) {

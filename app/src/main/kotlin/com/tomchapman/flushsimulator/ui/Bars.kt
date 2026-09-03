@@ -28,6 +28,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -73,6 +76,16 @@ fun FixtureBar(
                     .clip(RoundedCornerShape(percent = 50))
                     .background(if (isOn) palette.accent.toColor() else palette.ink.toColor().copy(alpha = 0.08f))
                     .clickable(enabled = !locked) { onPick(fixture) }
+                    // A locked chip shows only its unlock count, which read aloud is
+                    // just a number with no idea what it belongs to.
+                    .semantics {
+                        contentDescription = if (locked) {
+                            "${fixture.name}, locked. ${fixture.unlockAt} flushes to unlock."
+                        } else {
+                            "${fixture.name}. ${fixture.blurb}"
+                        }
+                        if (isOn) stateDescription = "Installed"
+                    }
                     .padding(horizontal = 12.dp, vertical = 7.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -138,7 +151,11 @@ private fun Plunger(plunges: Int, onPlunge: () -> Unit) {
             .height(40.dp)
             .clip(RoundedCornerShape(percent = 50))
             .background(Color(red = 0.86f, green = 0.34f, blue = 0.24f))
-            .clickable(onClick = onPlunge),
+            .clickable(onClick = onPlunge)
+            .semantics {
+                contentDescription = "Plunge"
+                stateDescription = "$plunges of ${Upkeep.PLUNGES_TO_CLEAR}"
+            },
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
     ) {
@@ -172,7 +189,7 @@ private fun Plunger(plunges: Int, onPlunge: () -> Unit) {
 @Composable
 private fun PaperPicker(paper: Int, palette: Palette, onPaper: (Int) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        StepButton("Remove", palette, enabled = paper > Upkeep.PAPER_RANGE.first) { onPaper(paper - 1) }
+        StepButton("Remove", "One square less", palette, paper > Upkeep.PAPER_RANGE.first) { onPaper(paper - 1) }
         Column(
             Modifier.width(58.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -190,18 +207,26 @@ private fun PaperPicker(paper: Int, palette: Palette, onPaper: (Int) -> Unit) {
                 fontWeight = FontWeight.Bold,
             )
         }
-        StepButton("Add", palette, enabled = paper < Upkeep.PAPER_RANGE.last) { onPaper(paper + 1) }
+        StepButton("Add", "One square more", palette, paper < Upkeep.PAPER_RANGE.last) { onPaper(paper + 1) }
     }
 }
 
 @Composable
-private fun StepButton(label: String, palette: Palette, enabled: Boolean, onClick: () -> Unit) {
+private fun StepButton(
+    label: String,
+    spoken: String,
+    palette: Palette,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
     Box(
         Modifier
             .size(32.dp)
             .clip(CircleShape)
             .background(palette.ink.toColor().copy(alpha = 0.09f))
-            .clickable(enabled = enabled, onClick = onClick),
+            .clickable(enabled = enabled, onClick = onClick)
+            // The glyph is a plus or a minus drawn as text, which reads as nothing.
+            .semantics { contentDescription = spoken },
         contentAlignment = Alignment.Center,
     ) {
         // A plain glyph rather than an icon: a plus and a minus are two strokes.
@@ -232,6 +257,11 @@ private fun Wand(grime: Double, isFlushing: Boolean, palette: Palette, onWand: (
             .clip(RoundedCornerShape(percent = 50))
             .background(palette.ink.toColor().copy(alpha = 0.09f))
             .clickable(enabled = live, onClick = onWand)
+            .semantics {
+                contentDescription = "Potty wand. Scrubs the bowl; a clean one flushes gold more often."
+                stateDescription =
+                    if (grime <= 0) "Bowl is clean" else "${(grime * 100).toInt()} percent dirty"
+            }
             .padding(horizontal = 13.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(7.dp),

@@ -19,6 +19,16 @@ android {
 
     buildFeatures { compose = true }
 
+    buildTypes {
+        release {
+            // material-icons-extended ships a couple of thousand vectors and this app
+            // uses twenty-six. R8 is what makes that difference disappear.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

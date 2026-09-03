@@ -41,10 +41,11 @@ the deploy steps and for what its plausibility caps do and don't stop.
 
 ## What's next
 
-- **Run it on something.** Every layer is covered by tests that do not need a device,
-  which is not the same as having run on one.
+- **Play it.** It installs and runs on a phone; nobody has actually played it.
 - **Deploy `board/`**, then put its URL in `BOARD_URL` (app/…/board/BoardClient.kt).
   Until then the Global tab says so and your own days keep being recorded.
+- **A release keystore**, before any of this can go to Play. The build shrinks to
+  about 1.4MB with R8; it just is not signed by anything yet.
 
 ## Running the tests
 
@@ -93,6 +94,19 @@ Android Studio ships its own JDK, so nothing needs installing first — and on a
 without one, the build fetches a matching toolchain rather than failing. Robolectric
 needs a Java 21 runtime for its SDK 36 sandbox, so the test tasks ask for one
 specifically while the app itself still compiles to 17.
+
+## The icon
+
+```sh
+pip install pillow
+python3 tools/make_icon.py
+```
+
+Generated rather than hand-drawn, the same as the iOS one, so it can be reviewed as
+code and redrawn after a palette change. It writes the adaptive icon's foreground and
+monochrome layers at every density, the background as a vector, and
+`tools/icon-preview.png` — the icon as a launcher will actually show it, beside the
+same thing under a circular mask, which is the harshest of the common ones.
 
 ## How the port was done
 

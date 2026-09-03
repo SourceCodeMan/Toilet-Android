@@ -13,9 +13,9 @@ import com.tomchapman.flushsimulator.core.RoomSurface
  * The room, the fixture and whatever is falling out of the sky, at a fixed moment.
  *
  * The real screen composes these itself, because the background is full-bleed while
- * the toilet lives in a layout slot. This is the still version: it takes the flush
- * clock as a number rather than running one, so a screenshot can ask for exactly
- * 0.55 seconds into a flush.
+ * the toilet lives in a layout slot, and it runs its own clocks. This is the still
+ * version, and it exists only for the screenshots: it takes the flush clock as a
+ * number rather than running one, so a render can ask for exactly 0.55 seconds in.
  */
 @Composable
 fun FlushStage(
