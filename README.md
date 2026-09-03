@@ -3,9 +3,11 @@
 An Android port of [Flush Simulator](https://github.com/SourceCodeMan/Toilet-iOS), which
 is a picture of a toilet you push the handle on.
 
-**Status: all three tiers ported.** The rules, the drawing, the screen, the
-leaderboard, the synthesised flush and the rumble. Untested on real hardware —
-nobody involved has an Android device yet.
+**Status: all three tiers ported, and the gameplay expansion with them.** The rules,
+the drawing, the screen, the leaderboard, the synthesised flush and the rumble, plus
+the tank, the daily, the roll on the wall and the plunger on the floor. The original
+loop has been played on a real phone; the expansion has been played only by tests so
+far.
 
 ## What's done
 
@@ -17,8 +19,9 @@ dependency at all.
 | `FlushTimeline.kt` | One flush, as pure functions of time |
 | `FlushProfile.kt` | The numbers that give a flush its character |
 | `FlushGrade.kt` | The hold window, and what each pull does to the flush |
-| `Upkeep.kt` | Grime, paper, gold and the odds of blocking it |
-| `Fixture.kt` | The five toilets, and what each is worth |
+| `Upkeep.kt` | Grime, paper, gold, the tank, and the odds of blocking it |
+| `Fixture.kt` | The five toilets, what each is worth and what each pays |
+| `DailyChallenge.kt` | Today's puzzle, seeded so both platforms get the same one |
 | `Palette.kt`, `Argb.kt` | Every colour, carried as a value rather than as UI |
 | `Rank.kt`, `Quips.kt` | Unearned titles and running commentary |
 | `Standings.kt` | Your best days, and the save format |
@@ -31,9 +34,13 @@ dependency at all.
 rather than assembled from views: the Swift already laid the toilet out at absolute
 positions in a fixed 320x470 space, so nothing needs laying out, and one `Canvas`
 sidesteps the three things Compose has no cheap answer for inside a view stack —
-continuous corner radii, `.blur`, and coloured offset shadows. The chrome around it —
-header, fixture bar, upkeep bar, stats card, toast — is ordinary Compose. `device/`
-is the thin part: samples into an `AudioTrack`, rungs into a `Vibrator`.
+continuous corner radii, `.blur`, and coloured offset shadows. The toilet stands in a
+wider stage (`BathroomStage`) with the paper roll hung to its left and the plunger
+leaning to its right, each its own `Canvas` with its own drag: pull the sheet down a
+square at a time and swipe across to tear it; drag the plunger onto the bowl and push
+down a stroke at a time. The chrome around it — header, fixture bar, upkeep bar, stats
+card, toast, and the run, daily and payout sheets — is ordinary Compose. `device/` is
+the thin part: samples into an `AudioTrack`, rungs into a `Vibrator`.
 
 `board/` — the global leaderboard, a Cloudflare Worker over D1, serving both platforms.
 Written and tested, **not deployed yet**; see [board/README.md](board/README.md) for
@@ -41,7 +48,9 @@ the deploy steps and for what its plausibility caps do and don't stop.
 
 ## What's next
 
-- **Play it.** It installs and runs on a phone; nobody has actually played it.
+- **Play the expansion.** The handle, the sound and the rumble have been tried on a
+  Galaxy A15; the roll, the plunger, the tank and the daily have only been driven by
+  tests.
 - **Deploy `board/`**, then put its URL in `BOARD_URL` (app/…/board/BoardClient.kt).
   Until then the Global tab says so and your own days keep being recorded.
 - **A release keystore**, before any of this can go to Play. The build shrinks to
@@ -53,9 +62,11 @@ the deploy steps and for what its plausibility caps do and don't stop.
 ./gradlew :core:test
 ```
 
-88 tests, no emulator, about a second. That is the entire point of `core` being a
-plain JVM module: the flush maths, the grading, the upkeep loop, the save format and
-the whole engine are covered by ordinary unit tests.
+129 tests, no emulator, about a second. That is the entire point of `core` being a
+plain JVM module: the flush maths, the grading, the upkeep loop, the tank, the daily's
+generator (checked bit-for-bit against the Swift's SplitMix64), the save format and
+the whole engine are covered by ordinary unit tests. The app's own 54 run in the
+screenshot task below.
 
 ## Looking at the drawing
 
@@ -63,17 +74,20 @@ the whole engine are covered by ordinary unit tests.
 ./gradlew :app:testDebugUnitTest -Proborazzi.test.record=true
 ```
 
-Writes twenty-three PNGs to `app/build/screenshots` — every fixture, the four moments of a
-flush, a neglected bowl, the gold, the assembled screen in four states, and the
-leaderboard in three — rendered
-through Robolectric on the JVM. No emulator and no device, because the only useful
-question about a drawing is what it looks like, and that needs a picture rather than
-an assertion.
+Writes thirty-four PNGs to `app/build/screenshots` — every fixture, the four moments
+of a flush, a neglected bowl, the gold, the assembled screen in nine states (including
+a daily in progress, paper pulled and torn, and a blocked bowl before and after the
+sheet is cut free), the run and daily sheets and the payout card, and the leaderboard
+in three — rendered through Robolectric on the JVM. No emulator and no device,
+because the only useful question about a drawing is what it looks like, and that
+needs a picture rather than an assertion.
 
-The same run also drives real touches at the handle and checks the engine on the other
-side, which is the part a picture cannot answer: that a 700ms hold grades perfect, a
-tap grades weak, a cancelled gesture is not a flush at all, and the tally only moves
-once the water settles.
+The same run also drives real touches at the handle, the roll and the plunger and
+checks the engine on the other side, which is the part a picture cannot answer: that
+a 700ms hold grades perfect, a tap grades weak, a cancelled gesture is not a flush at
+all, the tally only moves once the water settles, a drag down the sheet pulls three
+squares and a swipe across tears them, and five strokes with the plunger seated on the
+bowl clear a blockage.
 
 Nothing is asserted about *how* it looks. Golden-image comparison is worth turning on
 once the drawing settles; while it is still being tuned it would only cry wolf.
@@ -129,7 +143,7 @@ difference.
 
 ### Where this deliberately differs from the iOS app
 
-Six things changed on purpose. Everything else is meant to be the same app.
+Ten things changed on purpose. Everything else is meant to be the same app.
 
 1. **`core` has no Android dependency.** Colours are packed ARGB ints (`Argb`) rather
    than Compose `Color`, so the rules can be tested on a plain JVM. The Compose layer
@@ -155,6 +169,25 @@ Six things changed on purpose. Everything else is meant to be the same app.
 
 6. **`Quips` is an instance, not a global.** It remembers the last line it gave out;
    here that state belongs to an object and takes a seedable `Random`.
+
+7. **The daily ends when it ends.** The Swift never calls `endDaily()`, so after the
+   fifth flush the handle stays refused ("Today's daily is done") until the app is
+   relaunched, the "Daily done — N points" line is overwritten at once by the ordinary
+   cascade, and a blockage's cost from before the daily lingers in the message. Here
+   the engine ends the daily as the fifth flush settles, shows the score line last,
+   and clears the cost.
+
+8. **The plunger snaps home** when released off the bowl, where the Swift springs it
+   back. A spring on a `Modifier.offset` that a drag is also writing to is a fight
+   between two owners; the snap is the honest version until it is worth animating.
+
+9. **Payout chips show the value trimmed** — ×1.25, ×1.6, ×1 — where the Swift's
+   `%.2g` shows ×1.2 for the Victorian, which is not what it pays.
+
+10. **The stage is laid out by hand in dp**, one sized slot per object, rather than
+    scaling a layout. Each object's gestures then work in its own coordinates with no
+    transform to undo, and the floor line behind the stage is measured off where the
+    toilet's feet actually land rather than tuned as a fraction of the screen.
 
 Not a divergence so much as a contract worth stating: the Swift's `FlushEngine` was
 `@MainActor`, and Kotlin has no equivalent, so `FlushEngine` documents that it expects
