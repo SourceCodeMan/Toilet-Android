@@ -72,6 +72,59 @@ object HapticPattern {
     }
 
     /**
+     * The same pattern re-cut for hardware that cannot vary strength.
+     *
+     * Plenty of phones — Tom's A15 among them — report no amplitude control at all,
+     * and on those a rung is simply on or off. Played straight, the swell collapses
+     * into one flat two-and-a-half second buzz, which is what it did.
+     *
+     * So strength becomes time instead: each rung is chopped into a cycle that is on
+     * for its share of the period and off for the rest. The period sits near an
+     * eccentric motor's own spin-up time, so a short pulse never quite reaches full
+     * throw and genuinely feels weaker rather than merely briefer. The loud middle
+     * ends up a solid buzz, the tail a stutter, and the shape survives.
+     *
+     * Anything already shorter than a cycle — the opening knock, a tick — is left
+     * whole: a knock is a knock.
+     */
+    fun pulsed(steps: List<HapticStep>): List<HapticStep> {
+        val slices = mutableListOf<HapticStep>()
+
+        for (step in steps) {
+            if (step.millis <= PWM_PERIOD_MILLIS) {
+                slices += HapticStep(step.millis, if (step.amplitude > 0) MAX_AMPLITUDE else 0)
+                continue
+            }
+            var left = step.millis
+            while (left > 0) {
+                val period = minOf(PWM_PERIOD_MILLIS, left)
+                // Below the shortest pulse the motor can answer, asking for less is
+                // asking for nothing.
+                val on = (period * step.amplitude / MAX_AMPLITUDE)
+                    .let { if (it < MIN_ON_MILLIS) 0 else it }
+                if (on > 0) slices += HapticStep(on, MAX_AMPLITUDE)
+                if (period - on > 0) slices += HapticStep(period - on, 0)
+                left -= period
+            }
+        }
+
+        // Runs of the same state join up, which is what keeps the entry count down
+        // and turns the peak of the swell back into one unbroken buzz.
+        val merged = mutableListOf<HapticStep>()
+        for (slice in slices) {
+            val last = merged.lastOrNull()
+            if (last != null && last.amplitude == slice.amplitude) {
+                merged[merged.size - 1] = last.copy(millis = last.millis + slice.millis)
+            } else {
+                merged += slice
+            }
+        }
+        // A silent tail is just a wait before nothing.
+        while (merged.isNotEmpty() && merged.last().amplitude == 0) merged.removeAt(merged.size - 1)
+        return merged
+    }
+
+    /**
      * The intensity curve the rumble is played through, 0..1.
      *
      * CoreHaptics interpolates linearly between its control points, so this does too.
@@ -101,6 +154,16 @@ object HapticPattern {
 
     private fun amplitude(intensity: Double): Int =
         (intensity.coerceIn(0.0, 1.0) * MAX_AMPLITUDE).roundToInt().coerceAtLeast(1)
+
+    /**
+     * One duty cycle, for [pulsed]. Near an eccentric motor's spin-up time: shorter
+     * and a partial pulse never moves the mass at all, longer and the cycles start to
+     * be felt as separate taps rather than as one weaker buzz.
+     */
+    const val PWM_PERIOD_MILLIS = 20L
+
+    /** Below this the motor does not answer, so the cycle is simply off. */
+    private const val MIN_ON_MILLIS = 5L
 
     private const val TRANSIENT_MILLIS = 18L
 

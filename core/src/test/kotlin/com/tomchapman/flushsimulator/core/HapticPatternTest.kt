@@ -111,6 +111,99 @@ class HapticPatternTest {
         }
     }
 
+    // Hardware with no amplitude control
+
+    @Test
+    fun `pulsing only ever asks for on or off`() {
+        val pulsed = HapticPattern.pulsed(HapticPattern.flush(golden = false, scale = 1.0))
+        assertTrue(pulsed.isNotEmpty())
+        for (step in pulsed) {
+            assertTrue(
+                step.amplitude == 0 || step.amplitude == HapticPattern.MAX_AMPLITUDE,
+                "a device with no amplitude control was asked for ${step.amplitude}",
+            )
+            assertTrue(step.millis > 0, "a slice with no length")
+        }
+    }
+
+    @Test
+    fun `pulsing keeps the pattern's length`() {
+        for (fixture in Fixture.all) {
+            val steps = HapticPattern.flush(false, fixture.profile.timeScale)
+            val pulsed = HapticPattern.pulsed(steps)
+            // The silent tail is trimmed, so it may end early — but never run long.
+            assertTrue(
+                total(pulsed) <= total(steps),
+                "${fixture.name}: ${total(pulsed)}ms against ${total(steps)}ms",
+            )
+            assertTrue(total(pulsed) > total(steps) * 0.7, "${fixture.name} lost most of its buzz")
+        }
+    }
+
+    /**
+     * The point of the whole exercise: on hardware that cannot vary strength, the
+     * loud part of the flush should still be more *on* than the quiet part.
+     */
+    @Test
+    fun `pulsing turns the swell into a duty cycle`() {
+        val pulsed = HapticPattern.pulsed(HapticPattern.flush(false, 1.0))
+
+        fun onTimeBetween(from: Long, to: Long): Long {
+            var clock = 0L
+            var on = 0L
+            for (step in pulsed) {
+                val start = clock
+                val end = clock + step.millis
+                if (step.amplitude > 0) {
+                    on += (minOf(end, to) - maxOf(start, from)).coerceAtLeast(0)
+                }
+                clock = end
+            }
+            return on
+        }
+
+        // Around the peak of the swell against the fading tail, same window length.
+        val loud = onTimeBetween(400, 900)
+        val quiet = onTimeBetween(2_300, 2_800)
+        assertTrue(loud > quiet, "the swell did not survive: loud=${loud}ms quiet=${quiet}ms")
+        // Not solid, and should not be: the continuous event's own intensity is 0.75,
+        // so three quarters on is the ceiling the curve is played through.
+        assertTrue(loud > 300, "the middle should be mostly on, got ${loud}ms of 500")
+        assertTrue(loud < 500, "the middle should not be pinned on, got ${loud}ms of 500")
+    }
+
+    @Test
+    fun `the opening knock is left whole`() {
+        val pulsed = HapticPattern.pulsed(HapticPattern.flush(false, 1.0))
+        // Shorter than a cycle, so chopping it would only make it disappear.
+        assertEquals(HapticPattern.MAX_AMPLITUDE, pulsed.first().amplitude)
+        assertTrue(pulsed.first().millis <= HapticPattern.PWM_PERIOD_MILLIS)
+    }
+
+    @Test
+    fun `a tick survives pulsing intact`() {
+        val tick = HapticPattern.pulsed(HapticPattern.tick())
+        assertEquals(1, tick.size)
+        assertEquals(HapticPattern.MAX_AMPLITUDE, tick.single().amplitude)
+    }
+
+    @Test
+    fun `a pulsed pattern stays short enough for a vibrator to accept`() {
+        // Chopping every rung into a duty cycle is the obvious way to produce a
+        // waveform some HAL refuses. No limit is documented anywhere I can find, and
+        // the longest fixture measures 261 entries and plays, so this guards against
+        // an explosion rather than enforcing a known ceiling.
+        for (fixture in Fixture.all) {
+            for (golden in listOf(false, true)) {
+                val pulsed = HapticPattern.pulsed(HapticPattern.flush(golden, fixture.profile.timeScale))
+                assertTrue(
+                    pulsed.size <= 400,
+                    "${fixture.name} golden=$golden produced ${pulsed.size} entries",
+                )
+            }
+        }
+    }
+
     @Test
     fun `a tick is sharper than a thud, which is all Android can say`() {
         val tick = HapticPattern.tick().single()

@@ -46,21 +46,17 @@ class AndroidHaptics(context: Context) : Haptics {
         val device = vibrator ?: return
         if (steps.isEmpty()) return
 
-        val timings = LongArray(steps.size) { steps[it].millis }
-        val effect = if (hasAmplitude) {
-            VibrationEffect.createWaveform(timings, IntArray(steps.size) { steps[it].amplitude }, -1)
-        } else {
-            // No amplitude control, so the swell has to become a rhythm: rungs that
-            // would have been faint are simply off.
-            VibrationEffect.createWaveform(timings, onOff(steps), -1)
-        }
+        // Where strength cannot be varied, it is varied in time instead.
+        val playable = if (hasAmplitude) steps else HapticPattern.pulsed(steps)
+        if (playable.isEmpty()) return
+
+        val effect = VibrationEffect.createWaveform(
+            LongArray(playable.size) { playable[it].millis },
+            IntArray(playable.size) { playable[it].amplitude },
+            -1,
+        )
 
         // A missed buzz is not worth bothering anyone about.
         runCatching { device.vibrate(effect) }
-    }
-
-    /** Amplitudes collapsed to on or off, for hardware that only knows those. */
-    private fun onOff(steps: List<HapticStep>) = IntArray(steps.size) {
-        if (steps[it].amplitude >= HapticPattern.MAX_AMPLITUDE / 3) HapticPattern.MAX_AMPLITUDE else 0
     }
 }

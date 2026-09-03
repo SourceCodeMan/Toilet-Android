@@ -10,6 +10,8 @@ import com.tomchapman.flushsimulator.core.FlushEngine
 import com.tomchapman.flushsimulator.core.FlushGrade
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancel
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -40,13 +42,25 @@ class FlushScreenTest {
     val compose = createComposeRule()
 
     private lateinit var engine: FlushEngine
+    private var scope: CoroutineScope? = null
+
+    /**
+     * The engine's scope is main-confined, and the main looper is shared between every
+     * Robolectric test in the run. Left uncancelled, one test's settle can still be
+     * queued when the next one starts advancing the clock — which is exactly the kind
+     * of failure that only appears when the whole suite runs.
+     */
+    @After
+    fun tearDown() {
+        scope?.cancel()
+        scope = null
+    }
 
     private fun start(saved: Map<String, Any> = emptyMap()) {
         compose.mainClock.autoAdvance = false
-        engine = FlushEngine(
-            settings = MapSettings(saved),
-            scope = CoroutineScope(Dispatchers.Main),
-        )
+        val own = CoroutineScope(Dispatchers.Main)
+        scope = own
+        engine = FlushEngine(settings = MapSettings(saved), scope = own)
         compose.setContent { FlushScreen(engine) }
         compose.mainClock.advanceTimeByFrame()
     }
